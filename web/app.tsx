@@ -456,7 +456,7 @@ function SearchQueries({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => void }) {
+function ToolStep({ p }: { p: ToolPart }) {
   const [open, setOpen] = useState(false);
   const v = TOOL_VIEW[p.name] ?? { icon: "terminal", verb: p.name, key: "" };
   const a = parseArgs(p.args);
@@ -490,22 +490,6 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
         <span className="step-status">{status[p.status]}</span>
         <span className={`step-caret ${open ? "open" : ""}`}><Icon name="chevron" size={14} /></span>
       </button>
-      <Collapse open={p.status === "awaiting"}>
-        <div className="approve" role="group" aria-label="コマンドの実行の承認">
-          <p>このコマンドを実行しますか？</p>
-          {p.judge && !p.judge.ok && (
-            <p className="approve-why">
-              自動では許可しませんでした。{p.judge.reason}。
-              {p.judge.by === "jev" && <span className="scores">{judgeDetail(p.judge)}</span>}
-            </p>
-          )}
-          <pre className="cmd">{`$ ${a.command ?? ""}`}</pre>
-          <div className="approve-actions">
-            <button type="button" className="btn primary" onClick={() => onApprove(true)}>実行する</button>
-            <button type="button" className="btn" onClick={() => onApprove(false)}>拒否する</button>
-          </div>
-        </div>
-      </Collapse>
       <Collapse open={open}>
         <div className="step-body">
           {p.judge && p.status !== "awaiting" && (
@@ -529,12 +513,34 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
 
 // ─── messages ─────────────────────────────────────────────────────────────
 
+function ApproveCard({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => void }) {
+  const command = parseArgs(p.args).command ?? "";
+  return (
+    <Collapse open={p.status === "awaiting"}>
+      <div className="approve" role="group" aria-label="コマンドの実行の承認">
+        <p>このコマンドを実行しますか？</p>
+        {p.judge && !p.judge.ok && (
+          <p className="approve-why">
+            自動では許可しませんでした。{p.judge.reason}。
+            {p.judge.by === "jev" && <span className="scores">{judgeDetail(p.judge)}</span>}
+          </p>
+        )}
+        <pre className="cmd">{`$ ${command}`}</pre>
+        <div className="approve-actions">
+          <button type="button" className="btn primary" onClick={() => onApprove(true)}>実行する</button>
+          <button type="button" className="btn" onClick={() => onApprove(false)}>拒否する</button>
+        </div>
+      </div>
+    </Collapse>
+  );
+}
+
 /**
  * Reasoning and tool calls in one bounded, scrollable thread. New steps arrive at the bottom and the list
  * glides after them, so a long run of tool calls stays a fixed height instead of pushing the answer away.
  */
 function StepChain({ parts, onApprove }: { parts: (ReasoningPart | ToolPart)[]; onApprove: (tool: string, ok: boolean) => void }) {
-  const follow = useFollowBottom<HTMLDivElement>(parts, { tau: 180 });
+  const follow = useFollowBottom<HTMLDivElement>(parts, { tau: 1000 });
   const [edges, setEdges] = useState({ top: false, bottom: false });
   const measure = useCallback(() => {
     const el = follow.ref.current;
@@ -545,27 +551,24 @@ function StepChain({ parts, onApprove }: { parts: (ReasoningPart | ToolPart)[]; 
   }, [follow.ref]);
   useLayoutEffect(measure, [parts, measure]);
 
-  // A command waiting for approval must be on screen, even if the user had scrolled the chain up.
-  const awaiting = parts.some((p) => p.type === "tool" && p.status === "awaiting");
-  useEffect(() => {
-    if (awaiting) follow.toBottom();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [awaiting]);
-
   return (
-    <div
-      ref={follow.ref}
-      className={`steps-scroll ${edges.top ? "fade-top" : ""} ${edges.bottom ? "fade-bottom" : ""}`}
-      onScroll={() => (follow.onScroll(), measure())}
-      onWheel={follow.onUserScroll}
-      onTouchStart={follow.onUserScroll}
-    >
-      <ol className="steps">
-        {parts.map((p, i) =>
-          p.type === "reasoning" ? <ReasoningStep key={i} p={p} /> : <ToolStep key={p.id} p={p} onApprove={(ok) => onApprove(p.id, ok)} />,
-        )}
-      </ol>
-    </div>
+    <>
+      <div
+        ref={follow.ref}
+        className={`steps-scroll ${edges.top ? "fade-top" : ""} ${edges.bottom ? "fade-bottom" : ""}`}
+        onScroll={() => (follow.onScroll(), measure())}
+        onWheel={follow.onUserScroll}
+        onTouchStart={follow.onUserScroll}
+      >
+        <ol className="steps">
+          {parts.map((p, i) =>
+            p.type === "reasoning" ? <ReasoningStep key={i} p={p} /> : <ToolStep key={p.id} p={p} />,
+          )}
+        </ol>
+      </div>
+      {/* Outside the scroll area, so a pending approval is never scrolled out of view or faded at the edge. */}
+      {parts.map((p) => p.type === "tool" && p.name === "bash" && <ApproveCard key={p.id} p={p} onApprove={(ok) => onApprove(p.id, ok)} />)}
+    </>
   );
 }
 

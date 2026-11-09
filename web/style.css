@@ -653,7 +653,7 @@ kbd {
 .badge.bad { background: color-mix(in srgb, var(--rust) 14%, transparent); color: var(--rust); }
 
 .approve {
-  margin: 6px 0 12px 33px;
+  margin: 0 0 14px 33px;
   padding: 14px 16px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--text) 35%, transparent);
