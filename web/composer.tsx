@@ -4,6 +4,8 @@ import type { Settings } from "./sync";
 import { Icon, IconButton, usePopover } from "./ui";
 import "./composer.css";
 
+const MAX_IMAGES = 8;
+
 export const imageFiles = (list: FileList | File[] | null | undefined) => [...(list ?? [])].filter((f) => f.type.startsWith("image/"));
 
 /** Shrinks pasted or dropped images so a screenshot does not become a multi-megabyte request. */
@@ -24,7 +26,6 @@ async function toDataUrl(file: File): Promise<string> {
   }
 }
 
-/** The box a popover opened from `el` must fit in: the nearest scrolling ancestor, or the viewport. */
 function clipBox(el: HTMLElement): { top: number; bottom: number } {
   for (let p = el.parentElement; p; p = p.parentElement) {
     const o = getComputedStyle(p).overflowY;
@@ -39,7 +40,6 @@ export function SettingsPicker({ settings, jev, onChange }: { settings: Settings
   const auto = jev && settings.autoApprove;
   const effortIndex = Math.max(0, EFFORTS.findIndex((e) => e.id === settings.effort));
   const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
-    // Open toward the side with more room, and scroll inside if even that is too short.
     const r = e.currentTarget.getBoundingClientRect();
     const box = clipBox(e.currentTarget);
     const above = r.top - box.top, below = box.bottom - r.bottom;
@@ -55,7 +55,7 @@ export function SettingsPicker({ settings, jev, onChange }: { settings: Settings
         <Icon name="chevron" size={14} />
       </button>
       {pop.mounted && (
-        <div className={`popover picker-pop ${place.up ? "up" : "down"} ${pop.leaving ? "leaving" : ""}`} style={{ maxHeight: place.max }} role="dialog" aria-label="モデルの選択">
+        <div className={`popover picker-pop ${place.up ? "up" : "down"} ${pop.leaving ? "leaving" : ""}`} style={{ ...pop.style, maxHeight: place.max }} role="dialog" aria-label="モデルの選択">
           <div role="radiogroup" aria-label="モデル">
             {MODELS.map((m) => (
               <button type="button" role="radio" aria-checked={m.id === settings.model} key={m.id} className="pop-item" onClick={() => onChange({ model: m.id })}>
@@ -66,8 +66,8 @@ export function SettingsPicker({ settings, jev, onChange }: { settings: Settings
           </div>
           <div className="pop-sep" />
           <p className="pop-label">考える深さ</p>
-          <div className="segmented seg" role="radiogroup" aria-label="考える深さ">
-            <span className="seg-thumb" aria-hidden="true" style={{ transform: `translateX(calc(${effortIndex} * (100% + 2px)))` }} />
+          <div className="segmented seg" role="radiogroup" aria-label="考える深さ" style={{ "--n": EFFORTS.length, "--i": effortIndex } as React.CSSProperties}>
+            <span className="seg-thumb" aria-hidden="true" />
             {EFFORTS.map((e) => (
               <button type="button" role="radio" aria-checked={e.id === settings.effort} key={e.id} className={e.id === settings.effort ? "on" : ""} onClick={() => onChange({ effort: e.id })}>
                 {e.name}
@@ -101,8 +101,8 @@ export const Composer = forwardRef<ComposerHandle, {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback(async (files: File[]) => {
-    const urls = await Promise.all(files.slice(0, 8).map(toDataUrl));
-    setImages((cur) => [...cur, ...urls].slice(0, 8));
+    const urls = await Promise.all(files.slice(0, MAX_IMAGES).map(toDataUrl));
+    setImages((cur) => [...cur, ...urls].slice(0, MAX_IMAGES));
   }, []);
   useImperativeHandle(handle, () => ({ addFiles, focus: () => ta.current?.focus() }), [addFiles]);
 
@@ -110,7 +110,7 @@ export const Composer = forwardRef<ComposerHandle, {
     const el = ta.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`;
+    el.style.height = `${el.scrollHeight}px`;
   }, [value]);
 
   const canSend = !disabled && !running && (value.trim() !== "" || images.length > 0);

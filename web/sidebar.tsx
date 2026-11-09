@@ -56,9 +56,9 @@ function ConvItem({ c, active, onOpen, onRename, onDelete }: {
         <span className="conv-title">{c.title}</span>
       </a>
       <div className="conv-menu" ref={menu.ref}>
-        <IconButton icon="dots" label="会話の操作" size={16} onClick={() => menu.setOpen(!menu.open)} />
+        <IconButton icon="dots" label="会話の操作" small onClick={() => menu.setOpen(!menu.open)} />
         {menu.mounted && (
-          <div className={`popover menu-pop ${menu.leaving ? "leaving" : ""}`} role="menu">
+          <div className={`popover menu-pop ${menu.leaving ? "leaving" : ""}`} style={menu.style} role="menu">
             <button type="button" role="menuitem" className="pop-item" onClick={() => (menu.setOpen(false), setTitle(c.title), setMode("rename"))}>
               <Icon name="pencil" size={15} />
               名前を変更
@@ -89,13 +89,12 @@ function ThemeSwitch() {
       else document.documentElement.dataset.theme = t;
       setTheme(t);
     };
-    // The whole page crossfades between themes instead of every colour snapping at once.
     if (document.startViewTransition && !reducedMotion()) document.startViewTransition(run);
     else run();
   };
   return (
-    <div className="theme-switch seg" role="radiogroup" aria-label="テーマ">
-      <span className="seg-thumb" aria-hidden="true" style={{ transform: `translateX(${THEMES.findIndex((o) => o.id === theme) * 100}%)` }} />
+    <div className="theme-switch seg" role="radiogroup" aria-label="テーマ" style={{ "--n": THEMES.length, "--i": THEMES.findIndex((o) => o.id === theme) } as React.CSSProperties}>
+      <span className="seg-thumb" aria-hidden="true" />
       {THEMES.map((o) => (
         <button type="button" key={o.id} role="radio" aria-checked={theme === o.id} aria-label={o.label} title={o.label} className={theme === o.id ? "on" : ""} onClick={() => choose(o.id)}>
           <Icon name={o.icon} size={15} />
@@ -196,7 +195,7 @@ export function Sidebar({ convs, currentId, srv, query, setQuery, searchRef, onN
                 <span className="email">{account.email ?? "ChatGPT アカウント"}</span>
                 {account.plan && <span className="plan">{account.plan}</span>}
               </span>
-              <IconButton icon="logout" label="ログアウト" size={16} onClick={onLogout} />
+              <IconButton icon="logout" label="ログアウト" small onClick={onLogout} />
             </div>
           ) : (
             <span className="account muted">未ログイン</span>

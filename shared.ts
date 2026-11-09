@@ -25,16 +25,18 @@ export type ToolStatus = "judging" | "running" | "awaiting" | "done" | "denied" 
 /** Outcome of automatic approval. by: "rule" = static list, "jev" = TypeSafe Jev, "error" = Jev unavailable. */
 export type Judge = { ok: boolean; by: "rule" | "jev" | "error"; reason?: string; readOnly?: number; reversible?: number; servesTask?: number };
 
+/** Icons the browser draws (web/ui.tsx). */
+export type ToolIcon = "file" | "pencil" | "terminal" | "search";
+
 /** How a tool call is shown. Each tool computes its own on the server, so the browser needs no per-tool code. */
 export type ToolView = {
   label: string;
-  icon: string;
+  icon: ToolIcon;
   /** One line naming what the call acts on: a path, a command, a search objective. */
   target: string;
   /** Text the user approves before the call runs. Present only for calls that need approval. */
   request?: string;
   detail?: { kind: "diff"; before: string; after: string } | { kind: "code"; text: string } | { kind: "chips"; items: string[] };
-  /** The output is Markdown rather than plain text. */
   markdown?: boolean;
 };
 
@@ -73,7 +75,6 @@ export type ConvMeta = {
   createdAt: number;
   updatedAt: number;
 };
-/** A conversation as the browser sees it: stored metadata plus whether a turn is running right now. */
 export type ConvView = ConvMeta & { running: boolean };
 
 export type Ev =
@@ -95,7 +96,7 @@ export type Push =
   | { type: "ev"; conv: string; seq: number; ev: Ev }
   | { type: "meta"; meta: ConvView }
   | { type: "deleted"; id: string }
-  | { type: "auth"; account: Account | null };
+  | { type: "auth"; account: Account | null; error?: string };
 
 /** Pure: returns a new array, leaving the input untouched (React state). */
 export function apply(msgs: Message[], ev: Ev): Message[] {
@@ -147,6 +148,5 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
   return [...msgs.slice(0, -1), { ...last, parts }];
 }
 
-/** The text an assistant message said, without its reasoning and tool calls. */
 export const assistantText = (m: AssistantMessage) =>
   m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n\n");

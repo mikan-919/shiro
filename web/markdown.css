@@ -39,7 +39,6 @@
   color: var(--faint);
   border-bottom: 1px solid var(--line);
 }
-.code-head .icon-btn { width: 30px; height: 30px; }
 .code pre { margin: 0; border-radius: 0; padding: 14px 16px; white-space: pre; overflow-wrap: normal; font-size: 13.5px; }
 
 /* syntax colours drawn from the same soil palette */

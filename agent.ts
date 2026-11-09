@@ -2,23 +2,18 @@
 import type { ResponseFunctionToolCall, ResponseInputItem } from "openai/resources/responses/responses";
 import * as store from "./store";
 import { respond } from "./codex";
-import { available, firstLine, parseArgs, toolNamed } from "./tools";
+import { available, describe, parseArgs, summarize, usable } from "./tools";
 import { jevEnabled, judge } from "./approve";
 import { apply, assistantText, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type ToolPart } from "./shared";
 
 type Settings = Pick<ConvMeta, "model" | "effort" | "autoApprove">;
 type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void> };
 
-const errorSummary = (output: string) => firstLine(output.replace(/^error:\s*/, ""));
-
 /** Fills in the view of a tool call stored before calls carried one. */
 function withView(p: ToolPart): ToolPart {
   if (p.view) return p;
-  const tool = toolNamed(p.name);
-  const a = parseArgs(p.args);
-  const view = tool?.view(a) ?? { label: p.name, icon: "terminal", target: "" };
-  const summary = p.status === "error" ? errorSummary(p.output ?? "") : tool?.summary?.(a, p.status === "done" ? p.output : undefined);
-  return { ...p, view, summary };
+  const a = parseArgs(p.args) ?? {};
+  return { ...p, view: describe(p.name, a), summary: summarize(p.name, a, p.status, p.output) };
 }
 
 export function createAgent({ publish, cwd, defaultModel }: { publish: (p: Push) => void; cwd: string; defaultModel: string }) {
@@ -88,24 +83,26 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
     }
 
     async function call({ call_id: id, name, arguments: json }: ResponseFunctionToolCall): Promise<string> {
-      const tool = available().find((t) => t.def.name === name);
-      const a = parseArgs(json);
-      const request = tool?.approval?.(a);
-      emit(c, { t: "tool", id, name, args: json, view: { ...(tool?.view(a) ?? { label: name, icon: "terminal", target: "" }), request }, summary: tool?.summary?.(a) });
+      const parsed = parseArgs(json);
+      const a = parsed ?? {};
+      const view = describe(name, a);
+      emit(c, { t: "tool", id, name, args: json, view, summary: summarize(name, a, "running") });
       try {
+        const tool = usable(name);
         if (!tool) throw new Error(`unknown tool ${name}`);
-        if (request !== undefined && !(await approved(id, request))) {
+        if (!parsed) throw new Error("arguments are not a JSON object");
+        if (view.request !== undefined && !(await approved(id, view.request))) {
           emit(c, { t: "tool_status", id, status: "denied" });
           return "user denied this command";
         }
         emit(c, { t: "tool_status", id, status: "running" });
         const output = await tool.run(a, { signal, model: c.meta.model });
-        emit(c, { t: "tool_status", id, status: "done", output, summary: tool.summary?.(a, output) });
+        emit(c, { t: "tool_status", id, status: "done", output, summary: summarize(name, a, "done", output) });
         return output;
       } catch (e) {
         if (signal.aborted) throw e;
         const output = `error: ${(e as Error).message}`;
-        emit(c, { t: "tool_status", id, status: "error", output, summary: errorSummary(output) });
+        emit(c, { t: "tool_status", id, status: "error", output, summary: summarize(name, a, "error", output) });
         return output;
       }
     }
@@ -190,8 +187,8 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
 
     stop: (id: string) => turns.get(id)?.ctl.abort(),
 
-    approve(id: string, tool: string, ok: boolean): boolean {
-      const resolve = turns.get(id)?.approvals.get(tool);
+    approve(id: string, call: string, ok: boolean): boolean {
+      const resolve = turns.get(id)?.approvals.get(call);
       resolve?.(ok);
       return !!resolve;
     },

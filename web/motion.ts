@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 export const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -8,7 +8,8 @@ export const cssEase = (name: "--ease-out" | "--ease-in-out") =>
 
 /**
  * Keeps the last non-null value around for `ms` after it becomes null, so whatever shows it can play
- * an exit. `leaving` is true during that time.
+ * an exit. `leaving` is true during that time. `style` hands the duration to CSS as --exit, so the exit
+ * transition and the unmount use the same number.
  */
 export function useLinger<T>(value: T | null, ms: number) {
   const last = useRef(value);
@@ -21,7 +22,7 @@ export function useLinger<T>(value: T | null, ms: number) {
     const t = setTimeout(() => setMounted(false), ms);
     return () => clearTimeout(t);
   }, [present, ms]);
-  return { value: present || mounted ? last.current : null, leaving: !present && mounted };
+  return { value: present || mounted ? last.current : null, leaving: !present && mounted, style: { "--exit": `${ms}ms` } as CSSProperties };
 }
 
 /**

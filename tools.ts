@@ -1,24 +1,8 @@
 import type { FunctionTool } from "openai/resources/responses/responses";
-import type { ToolView } from "./shared";
+import type { ToolStatus, ToolView } from "./shared";
+import { firstLine, str, type Args, type Tool } from "./toolkit";
 import { searchTool } from "./search";
 
-export type Args = Record<string, unknown>;
-export type ToolContext = { signal: AbortSignal; model: string };
-
-/** Everything about one tool: what the model sees, how it runs, and how the UI shows it. */
-export type Tool = {
-  def: FunctionTool;
-  enabled?: () => boolean;
-  view: (a: Args) => ToolView;
-  /** The text the user must approve before the call runs; tools without it run unattended. */
-  approval?: (a: Args) => string;
-  run: (a: Args, ctx: ToolContext) => Promise<string>;
-  /** One line about the call: from its arguments before it runs, from its output once done. */
-  summary?: (a: Args, output?: string) => string | undefined;
-};
-
-export const str = (v: unknown) => (typeof v === "string" ? v : "");
-export const firstLine = (s: string) => s.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
 const lineCount = (s: string) => (s ? s.replace(/\n$/, "").split("\n").length : 0);
 
 const def = (name: string, description: string, props: Record<string, string>): FunctionTool => ({
@@ -75,7 +59,7 @@ const editFile: Tool = {
 const bash: Tool = {
   def: def("bash", "Run a shell command in the current directory. The user approves each call.", { command: "Command" }),
   view: (a) => ({ label: "コマンド", icon: "terminal", target: firstLine(str(a.command)), detail: { kind: "code", text: `$ ${str(a.command)}` } }),
-  approval: (a) => str(a.command),
+  command: (a) => str(a.command),
   run: async (a, { signal }) => {
     const p = Bun.spawn(["bash", "-c", str(a.command)], { stdout: "pipe", stderr: "pipe", signal });
     const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
@@ -91,17 +75,28 @@ const bash: Tool = {
 
 const ALL = [readFile, writeFile, editFile, bash, searchTool];
 
-/** The tools offered to the model right now. */
-export const available = () => ALL.filter((t) => t.enabled?.() ?? true);
+const enabled = (t: Tool) => t.enabled?.() ?? true;
+export const available = () => ALL.filter(enabled);
+/** The tool a call may run, or undefined for one that is disabled or does not exist. */
+export const usable = (name: string) => ALL.find((t) => t.def.name === name && enabled(t));
 
-/** Any tool by name, enabled or not, for showing calls already in a conversation. */
-export const toolNamed = (name: string) => ALL.find((t) => t.def.name === name);
+/** How a call looks. Works for any name, so calls to tools since disabled or never defined still show. */
+export function describe(name: string, a: Args): ToolView {
+  const tool = ALL.find((t) => t.def.name === name);
+  return { ...(tool?.view(a) ?? { label: name, icon: "terminal", target: "" }), request: tool?.command?.(a) };
+}
 
-export function parseArgs(json: string): Args {
+export function summarize(name: string, a: Args, status: ToolStatus, output?: string): string | undefined {
+  if (status === "error") return firstLine((output ?? "").replace(/^error:\s*/, ""));
+  return ALL.find((t) => t.def.name === name)?.summary?.(a, status === "done" ? output : undefined);
+}
+
+/** The arguments of a call, or undefined when the model sent something other than a JSON object. */
+export function parseArgs(json: string): Args | undefined {
   try {
     const v = JSON.parse(json);
-    return v && typeof v === "object" ? v : {};
+    return v && typeof v === "object" && !Array.isArray(v) ? v : undefined;
   } catch {
-    return {};
+    return undefined;
   }
 }

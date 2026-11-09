@@ -8,7 +8,7 @@ const AUTH = "https://auth.openai.com";
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
 const FILE = process.env.SHIRO_AUTH_FILE ?? `${homedir()}/.shiro/auth.json`;
 
-export type Cred = { access: string; refresh: string; expires: number; accountId: string };
+type Cred = { access: string; refresh: string; expires: number; accountId: string };
 
 const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
 

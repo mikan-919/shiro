@@ -2,22 +2,23 @@
    Light theme is the white of hyphae; dark theme is humus. Pine green means "allowed", rust means "stop". */
 
 :root {
-  --bg: #efefea;
-  --side-bg: #e6e5df;
-  --surface: #e3e2db;
-  --raised: #fafaf7;
-  --line: #d4d1c6;
-  --text: #221e18;
-  --muted: #6b6457;
-  --faint: #978f80;
-  --pine: #4e6e43;
-  --rust: #b24a33;
-  --ochre: #8a6431;
-  --accent-bg: #221e18;
-  --accent-fg: #efefea;
-  --code-bg: #e8e7e1;
-  --shadow: 0 1px 0 rgb(34 30 24 / 0.04), 0 10px 28px -14px rgb(34 30 24 / 0.28);
-  --scrim: rgb(34 30 24 / 0.32);
+  color-scheme: light dark;
+  --bg: light-dark(#efefea, #1c1814);
+  --side-bg: light-dark(#e6e5df, #17130f);
+  --surface: light-dark(#e3e2db, #26211b);
+  --raised: light-dark(#fafaf7, #2b251e);
+  --line: light-dark(#d4d1c6, #3a332a);
+  --text: light-dark(#221e18, #eae8e0);
+  --muted: light-dark(#6b6457, #a39a8b);
+  --faint: light-dark(#978f80, #776f62);
+  --pine: light-dark(#4e6e43, #8aac7a);
+  --rust: light-dark(#b24a33, #de7c62);
+  --ochre: light-dark(#8a6431, #c99a5b);
+  --accent-bg: light-dark(#221e18, #eae8e0);
+  --accent-fg: light-dark(#efefea, #1c1814);
+  --code-bg: light-dark(#e8e7e1, #14110d);
+  --shadow: 0 1px 0 light-dark(rgb(34 30 24 / 0.04), rgb(0 0 0 / 0.2)), 0 10px 28px -14px light-dark(rgb(34 30 24 / 0.28), rgb(0 0 0 / 0.6));
+  --scrim: light-dark(rgb(34 30 24 / 0.32), rgb(0 0 0 / 0.5));
 
   --sans: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif;
   --mincho: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
@@ -26,49 +27,10 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  color-scheme: light;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #1c1814;
-    --side-bg: #17130f;
-    --surface: #26211b;
-    --raised: #2b251e;
-    --line: #3a332a;
-    --text: #eae8e0;
-    --muted: #a39a8b;
-    --faint: #776f62;
-    --pine: #8aac7a;
-    --rust: #de7c62;
-    --ochre: #c99a5b;
-    --accent-bg: #eae8e0;
-    --accent-fg: #1c1814;
-    --code-bg: #14110d;
-    --shadow: 0 1px 0 rgb(0 0 0 / 0.2), 0 12px 32px -14px rgb(0 0 0 / 0.6);
-    --scrim: rgb(0 0 0 / 0.5);
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #1c1814;
-  --side-bg: #17130f;
-  --surface: #26211b;
-  --raised: #2b251e;
-  --line: #3a332a;
-  --text: #eae8e0;
-  --muted: #a39a8b;
-  --faint: #776f62;
-  --pine: #8aac7a;
-  --rust: #de7c62;
-  --ochre: #c99a5b;
-  --accent-bg: #eae8e0;
-  --accent-fg: #1c1814;
-  --code-bg: #14110d;
-  --shadow: 0 1px 0 rgb(0 0 0 / 0.2), 0 12px 32px -14px rgb(0 0 0 / 0.6);
-  --scrim: rgb(0 0 0 / 0.5);
-  color-scheme: dark;
-}
+/* The theme switch (web/sidebar.tsx) sets data-theme; without it the system setting decides. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 /* ─── base ─────────────────────────────────────────────────────────── */
 
@@ -112,6 +74,7 @@ kbd {
 }
 .icon-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
 .icon-btn:disabled { opacity: 0.35; }
+.icon-btn.small { width: 30px; height: 30px; }
 
 .btn {
   display: inline-flex;
@@ -190,7 +153,7 @@ pre {
 .pop-sep { height: 1px; background: var(--line); margin: 6px 4px; }
 .pop-label { margin: 4px 10px 6px; font-size: 12px; color: var(--faint); }
 /* Popovers leave faster than they arrive: the system answering, not the user deciding. */
-.popover.leaving { opacity: 0; transform: scale(0.97); transition-duration: 100ms; pointer-events: none; }
+.popover.leaving { opacity: 0; transform: scale(0.97); transition-duration: var(--exit); pointer-events: none; }
 
 /* Panels that open and close in place (step details, the approval card): an accordion, the one case
    where animating height is acceptable, done with grid rows so content needs no measuring. */
@@ -198,16 +161,24 @@ pre {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
-  transition: grid-template-rows 220ms var(--ease-out), opacity 220ms var(--ease-out);
+  transition: grid-template-rows var(--exit) var(--ease-out), opacity var(--exit) var(--ease-out);
 }
 .collapse.open { grid-template-rows: 1fr; opacity: 1; }
 @starting-style { .collapse.open { grid-template-rows: 0fr; opacity: 0; } }
 .collapse-inner { overflow: hidden; min-height: 0; }
 
-/* A row of options whose selection is a thumb sliding behind the buttons. Each row sets the thumb size. */
 .seg { position: relative; }
 .seg > button { position: relative; z-index: 1; transition: color 150ms ease; }
-.seg-thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; transition: transform 220ms var(--ease-out); }
+/* The row sets --n (options) and --i (selected); --gap is the space between its buttons. The row has 2px padding. */
+.seg-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px - var(--gap, 0px) * (var(--n) - 1)) / var(--n));
+  transform: translateX(calc(var(--i) * (100% + var(--gap, 0px))));
+  transition: transform 220ms var(--ease-out);
+}
 
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 240ms; animation-timing-function: var(--ease-out); }
 

@@ -46,11 +46,12 @@ export const Md = memo(function Md({ text }: { text: string }) {
   );
 });
 
-/**
- * Streams text at an even pace instead of in network-sized bursts. The revealed length eases toward the
- * received length (closing 1 - e^(-dt/220ms) of the gap per frame) with a floor of one character per 12ms,
- * so a large burst never trails far behind. Text that is not live renders in full at once.
- */
+/** Time constant of the reveal: each frame closes 1 - e^(-dt/TAU) of the gap to the received text. */
+const TAU = 220;
+/** The reveal never runs slower than one character per this many ms, so a large burst cannot trail far behind. */
+const MS_PER_CHAR = 12;
+
+/** Streams text at an even pace instead of in network-sized bursts. Text that is not live renders in full at once. */
 export function SmoothMd({ text, live }: { text: string; live: boolean }) {
   const [shown, setShown] = useState(() => (live ? 0 : text.length));
   const pos = useRef(shown);
@@ -63,7 +64,7 @@ export function SmoothMd({ text, live }: { text: string; live: boolean }) {
       if (gap <= 0) return;
       const dt = now - last;
       last = now;
-      pos.current = Math.min(text.length, pos.current + Math.max(gap * (1 - Math.exp(-dt / 220)), dt / 12));
+      pos.current = Math.min(text.length, pos.current + Math.max(gap * (1 - Math.exp(-dt / TAU)), dt / MS_PER_CHAR));
       setShown(Math.floor(pos.current));
       raf = requestAnimationFrame(step);
     };

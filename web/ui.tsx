@@ -32,15 +32,15 @@ const ICONS: Record<string, ReactNode> = {
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   return (
     <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {ICONS[name] ?? ICONS.terminal}
+      {ICONS[name]}
     </svg>
   );
 }
 
-export function IconButton({ icon, label, onClick, className = "", disabled, size }: { icon: string; label: string; onClick?: () => void; className?: string; disabled?: boolean; size?: number }) {
+export function IconButton({ icon, label, onClick, className = "", disabled, small }: { icon: string; label: string; onClick?: () => void; className?: string; disabled?: boolean; small?: boolean }) {
   return (
-    <button type="button" className={`icon-btn ${className}`} onClick={onClick} aria-label={label} title={label} disabled={disabled}>
-      <Icon name={icon} size={size} />
+    <button type="button" className={`icon-btn ${small ? "small" : ""} ${className}`} onClick={onClick} aria-label={label} title={label} disabled={disabled}>
+      <Icon name={icon} size={small ? 16 : 18} />
     </button>
   );
 }
@@ -51,7 +51,7 @@ export function CopyButton({ get, label = "コピー" }: { get: () => string; la
     <IconButton
       icon={done ? "check" : "copy"}
       label={done ? "コピーしました" : label}
-      size={16}
+      small
       onClick={async () => {
         await navigator.clipboard.writeText(get());
         setDone(true);
@@ -61,21 +61,16 @@ export function CopyButton({ get, label = "コピー" }: { get: () => string; la
   );
 }
 
-/** A panel that opens and closes in place, animating its height (grid rows 0fr ↔ 1fr) both ways. */
 export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
   const shown = useLinger(open ? { children } : null, 220);
   if (!shown.value) return null;
   return (
-    <div className={`collapse ${open ? "open" : ""}`}>
+    <div className={`collapse ${open ? "open" : ""}`} style={shown.style}>
       <div className="collapse-inner">{shown.value.children}</div>
     </div>
   );
 }
 
-/**
- * A popover's open state: closes on a click outside `ref` or on Escape, and stays mounted briefly
- * after closing so it can play its exit (`leaving`).
- */
 export function usePopover() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -92,5 +87,5 @@ export function usePopover() {
     };
   }, [open, close]);
   const presence = useLinger(open || null, 120);
-  return { open, setOpen, ref, mounted: !!presence.value, leaving: presence.leaving };
+  return { open, setOpen, ref, mounted: !!presence.value, leaving: presence.leaving, style: presence.style };
 }

@@ -11,6 +11,7 @@
 .side-open .sidebar { display: flex; }
 .scrim { display: none; }
 
+/* 900px is also the breakpoint wide() checks in app.tsx. */
 @media (min-width: 900px) {
   .sidebar {
     opacity: 0;
@@ -100,7 +101,6 @@
 .conv.active > a { background: var(--surface); color: var(--text); font-weight: 500; }
 .conv-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .conv-menu { position: absolute; right: 2px; top: 50%; translate: 0 -50%; opacity: 0; }
-.conv-menu .icon-btn { width: 28px; height: 28px; }
 .conv:hover .conv-menu, .conv.active .conv-menu, .conv-menu:focus-within { opacity: 1; }
 @media (hover: none) { .conv-menu { opacity: 1; } }
 .conv.editing input {
@@ -145,11 +145,10 @@
 .account-text { display: grid; min-width: 0; flex: 1; line-height: 1.3; }
 .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plan { color: var(--faint); font-size: 11.5px; }
-.account .icon-btn { width: 28px; height: 28px; }
 
 .theme-switch { display: flex; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
 .theme-switch button { width: 26px; height: 24px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); }
 .theme-switch button.on { color: var(--text); }
-.theme-switch .seg-thumb { width: 26px; border-radius: 7px; background: var(--surface); }
+.theme-switch .seg-thumb { border-radius: 7px; background: var(--surface); }
 
 .menu-pop { top: calc(100% + 4px); right: 0; min-width: 160px; transform-origin: top right; }

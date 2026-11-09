@@ -1,5 +1,5 @@
 // Web search through Parallel (https://docs.parallel.ai/api-reference/search/search).
-import type { Tool } from "./tools";
+import { str, type Tool } from "./toolkit";
 
 const API = process.env.SHIRO_PARALLEL_URL ?? "https://api.parallel.ai/v1/search";
 
@@ -42,7 +42,7 @@ export const searchTool: Tool = {
   view: (a) => ({
     label: "ウェブ検索",
     icon: "search",
-    target: String(a.objective ?? ""),
+    target: str(a.objective),
     detail: { kind: "chips", items: queriesOf(a.search_queries) },
     markdown: true,
   }),
@@ -51,7 +51,7 @@ export const searchTool: Tool = {
       method: "POST",
       headers: { "x-api-key": process.env.PARALLEL_API_KEY ?? "", "Content-Type": "application/json" },
       body: JSON.stringify({
-        objective: String(a.objective ?? ""),
+        objective: str(a.objective),
         search_queries: queriesOf(a.search_queries).slice(0, 5),
         client_model: model,
         // Keeps one search from flooding the context window.
@@ -65,6 +65,7 @@ export const searchTool: Tool = {
   },
   summary: (_, out) => {
     if (out === undefined) return undefined;
+    // Reads back the list formatResults() wrote.
     const titles = [...out.matchAll(/^\d+\. \[(.+?)\]/gm)].map((m) => m[1]!);
     if (!titles.length) return "結果なし";
     return titles.length > 1 ? `${titles[0]} ほか ${titles.length - 1} 件` : titles[0];

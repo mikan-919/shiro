@@ -29,7 +29,6 @@ const notFound = () => Response.json({ error: "会話が見つかりません" }
 const body = (req: Request) => req.json().catch(() => ({})) as Promise<Record<string, unknown>>;
 
 const isModel = (v: unknown): v is string => typeof v === "string" && /^[\w.-]{1,64}$/.test(v);
-/** The conversation settings present and valid in a request body; anything else is ignored. */
 const settingsIn = (b: Record<string, unknown>) => ({
   ...(isModel(b.model) && { model: b.model }),
   ...(isEffort(b.effort) && { effort: b.effort }),
@@ -50,7 +49,10 @@ const server = Bun.serve({
     "/api/login": {
       POST: guard(() => {
         const l = login(`${ORIGIN}/`);
-        l.done.then(async () => publish({ type: "auth", account: await account() })).catch(() => {});
+        l.done.then(
+          async () => publish({ type: "auth", account: await account() }),
+          (e: Error) => publish({ type: "auth", account: null, error: `ログインできませんでした: ${e.message}` }),
+        );
         return Response.json({ url: l.url });
       }),
     },
@@ -102,7 +104,7 @@ const server = Bun.serve({
     "/api/conversations/:id/approve": {
       POST: guard(async (req) => {
         const b = await body(req);
-        return Response.json({ ok: typeof b.tool === "string" && agent.approve(req.params.id, b.tool, b.ok === true) });
+        return Response.json({ ok: typeof b.call === "string" && agent.approve(req.params.id, b.call, b.ok === true) });
       }),
     },
   },

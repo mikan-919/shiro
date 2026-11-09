@@ -47,7 +47,7 @@
 .step-body { margin: 2px 0 10px 33px; }
 .step-body pre { max-height: 320px; }
 .step-body.reasoning { font-size: 14px; color: var(--muted); line-height: 1.75; }
-.step-body.reasoning > :first-child, .step-body.reasoning p:first-child { margin-top: 0; }
+.step-body.reasoning > :first-child { margin-top: 0; }
 .tool-error .step-node { border-color: color-mix(in srgb, var(--rust) 60%, transparent); color: var(--rust); }
 .tool-awaiting .step-node { border-color: var(--text); color: var(--text); }
 
@@ -102,9 +102,8 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
 .out-md { font-size: 13.5px; line-height: 1.7; max-height: 420px; overflow-y: auto; padding-right: 4px; }
 .out-md ol { padding-left: 1.4em; margin: 0; }
 .out-md li { margin: 0 0 10px; }
-.out-md blockquote { margin: 4px 0 0; color: var(--faint); border-left-color: var(--line); }
+.out-md blockquote { margin: 4px 0 0; color: var(--faint); }
 
-/* Fades at the edges show there is more of the chain above or below. */
 .steps-scroll {
   --fade-top: 0px;
   --fade-bottom: 0px;
@@ -118,7 +117,6 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
 .steps-scroll.fade-top { --fade-top: 28px; }
 .steps-scroll.fade-bottom { --fade-bottom: 28px; }
 
-/* One line of the result under a collapsed tool step, aligned with the step's label. */
 .step-preview {
   margin: -6px 0 4px 33px;
   font: 12.5px/1.5 var(--mono);

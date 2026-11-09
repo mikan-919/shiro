@@ -1,12 +1,12 @@
 import { test, expect } from "bun:test";
-import { toolNamed } from "./tools";
+import { usable } from "./tools";
 
 test("edit_file replaces only a unique match", async () => {
   const p = `${import.meta.dir}/.tmp-edit.txt`;
   await Bun.write(p, "a $& b a");
-  const edit = toolNamed("edit_file")!;
+  const edit = usable("edit_file")!;
   const ctx = { signal: new AbortController().signal, model: "" };
-  expect(edit.run({ path: p, old_str: "a", new_str: "x" }, ctx)).rejects.toThrow("2 times");
+  await expect(edit.run({ path: p, old_str: "a", new_str: "x" }, ctx)).rejects.toThrow("2 times");
   await edit.run({ path: p, old_str: " b", new_str: " $1" }, ctx);
   expect(await Bun.file(p).text()).toBe("a $& $1 a");
   await Bun.file(p).delete();

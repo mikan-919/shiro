@@ -36,7 +36,7 @@ function UserBubble({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh
       {m.text && <div className="bubble">{m.text}</div>}
       <div className="msg-actions">
         <CopyButton get={() => m.text} />
-        <IconButton icon="pencil" label="編集して送り直す" size={16} disabled={busy} onClick={() => setEditing(true)} />
+        <IconButton icon="pencil" label="編集して送り直す" small disabled={busy} onClick={() => setEditing(true)} />
       </div>
     </div>
   );
@@ -44,7 +44,6 @@ function UserBubble({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh
 
 type Block = { kind: "text"; text: string; key: string } | { kind: "steps"; parts: (ReasoningPart | ToolPart)[]; key: string };
 
-/** Text parts stand alone; consecutive reasoning and tool parts form one chain. */
 function blocks(parts: Part[]): Block[] {
   const out: Block[] = [];
   parts.forEach((p, i) => {
@@ -90,7 +89,7 @@ function AssistantBody({ m, fresh, isLast, busy, onApprove, onRegenerate }: {
       {m.status !== "streaming" && (
         <div className="msg-actions">
           {text && <CopyButton get={() => text} />}
-          {isLast && <IconButton icon="retry" label="回答を作り直す" size={16} disabled={busy} onClick={onRegenerate} />}
+          {isLast && <IconButton icon="retry" label="回答を作り直す" small disabled={busy} onClick={onRegenerate} />}
           <span className="model-tag">{modelName(m.model)}</span>
         </div>
       )}

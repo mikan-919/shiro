@@ -12,6 +12,7 @@ import { Sidebar } from "./sidebar";
 import { Empty } from "./empty";
 import "./app.css";
 
+// The same 900px breakpoint switches the sidebar between drawer and column in sidebar.css.
 const wide = () => matchMedia("(min-width: 900px)").matches;
 
 function App() {
@@ -127,8 +128,12 @@ function App() {
 
       <main className="main">
         <header className="topbar">
-          {!sidebar && <IconButton icon="panel" label="サイドバーを開く" onClick={() => setSidebar(true)} />}
-          {!sidebar && <IconButton icon="compose" label="新しい会話" onClick={newChat} />}
+          {!sidebar && (
+            <>
+              <IconButton icon="panel" label="サイドバーを開く" onClick={() => setSidebar(true)} />
+              <IconButton icon="compose" label="新しい会話" onClick={newChat} />
+            </>
+          )}
           <h1 className="top-title" key={showThread ? conv.meta.id : "none"}>{showThread ? conv.meta.title : ""}</h1>
           {!live.online && <span className="offline" role="status">サーバーとの接続が切れています。再接続しています</span>}
         </header>
@@ -172,13 +177,13 @@ function App() {
         </div>
       )}
       {lightbox.value && (
-        <div className={`lightbox ${lightbox.leaving ? "leaving" : ""}`} role="dialog" aria-label="画像" onClick={() => setLightbox(null)} onKeyDown={(e) => e.key === "Escape" && setLightbox(null)} tabIndex={-1} ref={(el) => el?.focus()}>
+        <div className={`lightbox ${lightbox.leaving ? "leaving" : ""}`} style={lightbox.style} role="dialog" aria-label="画像" onClick={() => setLightbox(null)} onKeyDown={(e) => e.key === "Escape" && setLightbox(null)} tabIndex={-1} ref={(el) => el?.focus()}>
           <img src={lightbox.value} alt="" />
           <IconButton icon="x" label="閉じる" className="lightbox-close" onClick={() => setLightbox(null)} />
         </div>
       )}
       {toast.value && (
-        <div className={`toast ${toast.leaving ? "leaving" : ""}`} role="status">
+        <div className={`toast ${toast.leaving ? "leaving" : ""}`} style={toast.style} role="status">
           <Icon name="alert" size={16} />
           {toast.value}
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import "./empty.css";
 
 /** A fairy ring of hyphae: threads start on a circle and branch outward, the centre left bare. */
@@ -31,6 +31,9 @@ function ringPaths() {
   return paths;
 }
 
+/** Position in the entrance sequence (see empty.css). */
+const order = (i: number) => ({ "--i": i }) as CSSProperties;
+
 // The ring grows once per page load. New chats (often opened with Ctrl+Shift+O) show it already grown.
 let ringGrown = false;
 
@@ -39,7 +42,7 @@ function Ring() {
   const [grow] = useState(() => !ringGrown);
   useEffect(() => void (ringGrown = true), []);
   return (
-    <svg className={`ring ${grow ? "grow" : ""}`} viewBox="0 0 280 280" aria-hidden="true">
+    <svg className={`ring ${grow ? "grow" : ""}`} style={order(0)} viewBox="0 0 280 280" aria-hidden="true">
       {paths.map((p, i) => (
         <path key={i} d={p.d} pathLength={1} strokeWidth={p.w} style={{ opacity: Math.max(p.o, 0.15), animationDelay: `${p.delay}s` }} />
       ))}
@@ -54,7 +57,6 @@ const SUGGESTIONS = [
   "今日やることを整理したい",
 ];
 
-/** The new-chat screen: an invitation to log in, or a composer with suggestions to start from. */
 export function Empty({ needsLogin, composer, onLogin, onSuggest }: {
   needsLogin: boolean; composer: ReactNode; onLogin: () => void; onSuggest: (text: string) => void;
 }) {
@@ -62,16 +64,16 @@ export function Empty({ needsLogin, composer, onLogin, onSuggest }: {
     <div className="empty">
       <Ring />
       {needsLogin ? (
-        <div className="login">
+        <div className="login" style={order(1)}>
           <h2 className="greeting">はじめに、ChatGPT のアカウントでログインしてください</h2>
           <p>shiro は ChatGPT のプランに含まれる Codex の利用枠で応答します。</p>
           <button type="button" className="btn primary large" onClick={onLogin}>ChatGPT でログイン</button>
         </div>
       ) : (
         <>
-          <h2 className="greeting">何から始めますか</h2>
-          <div className="empty-composer">{composer}</div>
-          <div className="suggestions">
+          <h2 className="greeting" style={order(1)}>何から始めますか</h2>
+          <div className="empty-composer" style={order(2)}>{composer}</div>
+          <div className="suggestions" style={order(3)}>
             {SUGGESTIONS.map((s) => (
               <button type="button" key={s} className="chip" onClick={() => onSuggest(s)}>
                 {s}

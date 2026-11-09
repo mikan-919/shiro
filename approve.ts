@@ -5,7 +5,8 @@
 import type { Judge } from "./shared";
 
 const API = process.env.SHIRO_JEV_URL ?? "https://api.typesafe.ai/v1/systemone";
-const MODEL = process.env.SHIRO_JEV_MODEL ?? "jev-latest";
+// Pinned: the thresholds below were measured against this version, and "jev-latest" moves.
+const MODEL = process.env.SHIRO_JEV_MODEL ?? "jev-1.14.0";
 const THRESHOLD = 0.9;
 // Measured against jev-1.14: pure reads scored 0.87-0.98 (git status is the low one: it may refresh the index),
 // state-changing commands 0.06 or less. 0.8 keeps git status in without coming near the writes.
@@ -81,7 +82,7 @@ const QUESTIONS = {
   },
 } as const;
 
-export async function judge(command: string, project: string, task: string, signal?: AbortSignal): Promise<Judge> {
+export async function judge(command: string, project: string, task: string, signal: AbortSignal): Promise<Judge> {
   const rule = neverAuto(command);
   if (rule) return { ok: false, by: "rule", reason: rule };
   try {
@@ -89,7 +90,7 @@ export async function judge(command: string, project: string, task: string, sign
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.TYPESAFE_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: MODEL, state: { commands: [command], project, task }, questions: QUESTIONS }),
-      signal: AbortSignal.any([AbortSignal.timeout(8000), ...(signal ? [signal] : [])]),
+      signal: AbortSignal.any([AbortSignal.timeout(8000), signal]),
     });
     if (!res.ok) return { ok: false, by: "error", reason: `Jev が応答しませんでした（${res.status}）` };
     const j = (await res.json()) as { answers?: Record<string, { noul?: unknown }> };
@@ -98,7 +99,6 @@ export async function judge(command: string, project: string, task: string, sign
     const serves = j.answers?.serves_task?.noul;
     const valid = (v: unknown): v is number => typeof v === "number" && v >= 0 && v <= 1;
     if (!valid(readOnly) || !valid(reversible) || !valid(serves)) return { ok: false, by: "error", reason: "Jev の応答を読み取れませんでした" };
-    // A pure read passes on its own; anything that changes state must be both undoable and on task.
     const ok = readOnly >= READ_THRESHOLD || (reversible >= THRESHOLD && serves >= THRESHOLD);
     return {
       ok,
@@ -109,7 +109,7 @@ export async function judge(command: string, project: string, task: string, sign
       reason: ok ? undefined : reversible < THRESHOLD ? "取り消せる操作だと判定できませんでした" : "依頼に沿った操作だと判定できませんでした",
     };
   } catch (e) {
-    if (signal?.aborted) throw e;
+    if (signal.aborted) throw e;
     return { ok: false, by: "error", reason: (e as Error).name === "TimeoutError" ? "Jev の判定が時間内に終わりませんでした" : "Jev に接続できませんでした" };
   }
 }

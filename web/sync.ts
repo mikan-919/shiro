@@ -7,7 +7,7 @@ export type ServerState = { account: Account | null; cwd: string; defaultModel: 
 export type Conversation = { meta: ConvView; messages: Message[] };
 export type Settings = Pick<ConvMeta, "model" | "effort" | "autoApprove">;
 
-export async function api<T = unknown>(path: string, body?: unknown, method?: string): Promise<T> {
+async function api<T = unknown>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await fetch(path, {
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers: body === undefined ? undefined : { "content-type": "application/json" },
@@ -60,38 +60,43 @@ export function useLive(say: (msg: string) => void) {
   const known = useRef<Set<string>>(new Set());
   const fail = useCallback((e: unknown) => say((e as Error).message), [say]);
 
+  // Points the URL and the screen at a conversation. The shown one stays while it is the same, so reloading it does not flash.
+  const show = useCallback((id: string | null) => {
+    if (idFromPath() !== id) history.pushState(null, "", id ? `/c/${id}` : "/");
+    cur.current = id;
+    setCurrentId(id);
+    setConv((c) => (id && c?.meta.id === id ? c : null));
+  }, []);
+
   const load = useCallback(async (id: string) => {
-    held.current = [];
+    const pending: Push[] = [];
+    held.current = pending;
     try {
       const d = await api<Conversation & { seq: number }>(`/api/conversations/${id}`);
       if (cur.current !== id) return;
       let { messages, seq: s } = d;
-      for (const p of held.current ?? []) if (p.type === "ev" && p.conv === id && p.seq > s) ((messages = apply(messages, p.ev)), (s = p.seq));
+      for (const p of pending) if (p.type === "ev" && p.conv === id && p.seq > s) ((messages = apply(messages, p.ev)), (s = p.seq));
       seq.current = s;
       known.current = new Set(messages.map((m) => m.id));
       setConv({ meta: d.meta, messages });
     } catch (e) {
-      if (cur.current === id) (fail(e), open(null));
+      if (cur.current === id) (fail(e), show(null));
     } finally {
-      held.current = null;
+      if (held.current === pending) held.current = null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fail]);
+  }, [fail, show]);
 
   /** Shows a conversation (null: the new-chat screen). Pass `initial` when its contents are already known. */
   const open = useCallback((id: string | null, initial?: Conversation) => {
-    if (idFromPath() !== id) history.pushState(null, "", id ? `/c/${id}` : "/");
-    cur.current = id;
-    setCurrentId(id);
-    if (!id) return setConv(null);
+    show(id);
+    if (!id) return;
     if (initial) {
       seq.current = 0;
       known.current = new Set();
       return setConv(initial);
     }
-    setConv((c) => (c?.meta.id === id ? c : null));
     void load(id);
-  }, [load]);
+  }, [show, load]);
 
   const refresh = useCallback(async () => {
     try {
@@ -118,9 +123,10 @@ export function useLive(say: (msg: string) => void) {
       setConv((c) => (c && c.meta.id === p.meta.id ? { ...c, meta: p.meta } : c));
     } else if (p.type === "deleted") {
       setConvs((cs) => cs.filter((c) => c.id !== p.id));
-      if (cur.current === p.id) open(null);
+      if (cur.current === p.id) show(null);
     } else if (p.type === "auth") {
       setSrv((s) => (s ? { ...s, account: p.account } : s));
+      if (p.error) say(p.error);
     }
   };
 
@@ -153,16 +159,10 @@ export function useLive(say: (msg: string) => void) {
   }, [refresh]);
 
   useEffect(() => {
-    const f = () => {
-      const id = idFromPath();
-      cur.current = id;
-      setCurrentId(id);
-      setConv((c) => (c?.meta.id === id ? c : null));
-      if (id) void load(id);
-    };
+    const f = () => open(idFromPath());
     addEventListener("popstate", f);
     return () => removeEventListener("popstate", f);
-  }, [load]);
+  }, [open]);
 
   const call = <T,>(p: Promise<T>) => p.catch(fail);
   const id = conv?.meta.id;
@@ -176,7 +176,6 @@ export function useLive(say: (msg: string) => void) {
     known: known.current,
     open,
 
-    /** Sends a message, first creating the conversation (with `settings`) when none is open. */
     async send(text: string, images: string[], settings: Settings, from?: string) {
       try {
         let target = currentId;
@@ -194,7 +193,7 @@ export function useLive(say: (msg: string) => void) {
     },
     update: (body: Partial<Settings>) => id && call(api(`/api/conversations/${id}`, body, "PATCH")),
     stop: () => id && call(api(`/api/conversations/${id}/stop`, {})),
-    approve: (tool: string, ok: boolean) => id && call(api(`/api/conversations/${id}/approve`, { tool, ok })),
+    approve: (callId: string, ok: boolean) => id && call(api(`/api/conversations/${id}/approve`, { call: callId, ok })),
     rename: (cid: string, title: string) => call(api(`/api/conversations/${cid}`, { title }, "PATCH")),
     remove: (cid: string) => call(api(`/api/conversations/${cid}`, undefined, "DELETE")),
     logout: () => call(api("/api/logout", {})),

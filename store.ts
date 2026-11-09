@@ -16,7 +16,8 @@ db.run(`CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY, title TEXT NOT NULL, model TEXT NOT NULL, effort TEXT NOT NULL,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   messages TEXT NOT NULL, items TEXT NOT NULL, auto_approve INTEGER NOT NULL DEFAULT 1)`);
-// Databases created before auto-approval existed lack the column.
+// Databases created before auto-approval existed lack the column. DEFAULT 1 fills their rows and matches
+// DEFAULTS.autoApprove in shared.ts.
 if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "auto_approve"))
   db.run("ALTER TABLE conversations ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 1");
 

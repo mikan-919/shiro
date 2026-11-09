@@ -47,11 +47,8 @@
 .login .greeting { margin-bottom: 12px; }
 .login p { color: var(--muted); margin: 0 0 24px; font-size: 14.5px; }
 
-/* A new chat assembles top to bottom: ring, greeting, composer, suggestions, 40ms apart. */
-.empty > * { transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out); }
-.empty > :nth-child(2) { transition-delay: 40ms; }
-.empty > :nth-child(3) { transition-delay: 80ms; }
-.empty > :nth-child(4) { transition-delay: 120ms; }
+/* A new chat assembles top to bottom, each part 40ms after the one before (empty.tsx numbers them in --i). */
+.empty > * { transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out); transition-delay: calc(var(--i, 0) * 40ms); }
 @starting-style { .empty > * { opacity: 0; transform: translateY(6px); } }
 
 @media (prefers-reduced-motion: reduce) {
