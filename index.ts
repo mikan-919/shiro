@@ -3,6 +3,7 @@ import type { ResponseFunctionToolCall, ResponseInputItem } from "openai/resourc
 import { account, getCred, hasCred, logout, startLogin } from "./auth";
 import page from "./web/index.html";
 import { TOOLS, runTool } from "./tools";
+import { jevEnabled, judge } from "./approve";
 import * as store from "./store";
 import { apply, assistantText, EFFORTS, MODELS, type ConvMeta, type Effort, type Ev, type Push } from "./shared";
 
@@ -53,15 +54,24 @@ async function runTurn(c: store.Conv, text: string, images: string[]) {
   emit(c, { t: "assistant", id: crypto.randomUUID(), model: c.meta.model });
   touch(c);
 
-  const confirm = (id: string) => () =>
-    new Promise<boolean>((resolve) => {
+  const confirm = (id: string) => async (command: string) => {
+    if (c.meta.autoApprove && jevEnabled()) {
+      emit(c, { t: "tool_status", id, status: "judging" });
+      const verdict = await judge(command, CWD, text, r.ctl.signal);
+      emit(c, { t: "tool_judge", id, judge: verdict });
+      if (verdict.ok) {
+        emit(c, { t: "tool_status", id, status: "running" });
+        return true;
+      }
+    }
+    const ok = await new Promise<boolean>((resolve) => {
       r.approvals.set(id, resolve);
       emit(c, { t: "tool_status", id, status: "awaiting" });
-    }).then((ok) => {
-      r.approvals.delete(id);
-      emit(c, { t: "tool_status", id, status: ok ? "running" : "denied" });
-      return ok;
     });
+    r.approvals.delete(id);
+    emit(c, { t: "tool_status", id, status: ok ? "running" : "denied" });
+    return ok;
+  };
 
   try {
     while (true) {
@@ -149,7 +159,7 @@ const server = Bun.serve({
 
     "/api/state": {
       GET: guard(async () =>
-        Response.json({ account: (await hasCred()) ? await account() : null, cwd: CWD, models: MODELS, efforts: EFFORTS, defaultModel: DEFAULT_MODEL }),
+        Response.json({ account: (await hasCred()) ? await account() : null, cwd: CWD, models: MODELS, efforts: EFFORTS, defaultModel: DEFAULT_MODEL, jev: jevEnabled() }),
       ),
     },
     "/api/login": {
@@ -174,8 +184,8 @@ const server = Bun.serve({
     "/api/conversations": {
       GET: guard(() => Response.json(store.list().map((m) => ({ ...m, running: running.has(m.id) })))),
       POST: guard(async (req) => {
-        const b = (await req.json().catch(() => ({}))) as { model?: unknown; effort?: unknown };
-        const c = store.create(isModel(b.model) ? b.model : DEFAULT_MODEL, isEffort(b.effort) ? b.effort : "medium");
+        const b = (await req.json().catch(() => ({}))) as { model?: unknown; effort?: unknown; autoApprove?: unknown };
+        const c = store.create(isModel(b.model) ? b.model : DEFAULT_MODEL, isEffort(b.effort) ? b.effort : "medium", b.autoApprove !== false);
         publish({ type: "meta", meta: metaOf(c) });
         return Response.json(metaOf(c));
       }),
@@ -188,10 +198,11 @@ const server = Bun.serve({
       PATCH: guard(async (req) => {
         const c = store.get(req.params.id);
         if (!c) return notFound();
-        const b = (await req.json()) as { title?: unknown; model?: unknown; effort?: unknown };
+        const b = (await req.json()) as { title?: unknown; model?: unknown; effort?: unknown; autoApprove?: unknown };
         if (typeof b.title === "string" && b.title.trim()) c.meta.title = b.title.trim().slice(0, 100);
         if (isModel(b.model)) c.meta.model = b.model;
         if (isEffort(b.effort)) c.meta.effort = b.effort;
+        if (typeof b.autoApprove === "boolean") c.meta.autoApprove = b.autoApprove;
         store.save(c);
         publish({ type: "meta", meta: metaOf(c) });
         return Response.json(metaOf(c));

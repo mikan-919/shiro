@@ -16,12 +16,15 @@ export const EFFORTS = [
 ] as const;
 export type Effort = (typeof EFFORTS)[number]["id"];
 
-export type ToolStatus = "running" | "awaiting" | "done" | "denied" | "error";
+export type ToolStatus = "judging" | "running" | "awaiting" | "done" | "denied" | "error";
+
+/** Outcome of automatic approval. by: "rule" = static list, "jev" = TypeSafe Jev, "error" = Jev unavailable. */
+export type Judge = { ok: boolean; by: "rule" | "jev" | "error"; reason?: string; reversible?: number; servesTask?: number };
 
 export type Part =
   | { type: "reasoning"; text: string; done: boolean }
   | { type: "text"; text: string }
-  | { type: "tool"; id: string; name: string; args: string; status: ToolStatus; output?: string };
+  | { type: "tool"; id: string; name: string; args: string; status: ToolStatus; output?: string; judge?: Judge };
 
 export type UserMessage = { id: string; role: "user"; text: string; images: string[]; itemIndex: number };
 export type AssistantMessage = {
@@ -39,6 +42,7 @@ export type ConvMeta = {
   title: string;
   model: string;
   effort: Effort;
+  autoApprove: boolean;
   createdAt: number;
   updatedAt: number;
   running: boolean;
@@ -52,6 +56,7 @@ export type Ev =
   | { t: "text_delta"; text: string }
   | { t: "tool"; id: string; name: string; args: string }
   | { t: "tool_status"; id: string; status: ToolStatus; output?: string }
+  | { t: "tool_judge"; id: string; judge: Judge }
   | { t: "end"; status: "done" | "stopped" | "error"; error?: string }
   | { t: "truncate"; at: number };
 
@@ -92,16 +97,18 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
     case "tool":
       parts.push({ type: "tool", id: ev.id, name: ev.name, args: ev.args, status: "running" });
       break;
-    case "tool_status": {
+    case "tool_status":
+    case "tool_judge": {
       const i = parts.findIndex((p) => p.type === "tool" && p.id === ev.id);
-      if (i >= 0) parts[i] = { ...(parts[i] as Extract<Part, { type: "tool" }>), status: ev.status, output: ev.output };
+      const p = parts[i] as Extract<Part, { type: "tool" }> | undefined;
+      if (p) parts[i] = ev.t === "tool_status" ? { ...p, status: ev.status, output: ev.output } : { ...p, judge: ev.judge };
       break;
     }
     case "end": {
       // Nothing can still be in flight once the turn has ended.
       const closed = parts.map((p): Part => {
         if (p.type === "reasoning" && !p.done) return { ...p, done: true };
-        if (p.type === "tool" && p.status === "awaiting") return { ...p, status: "denied" };
+        if (p.type === "tool" && (p.status === "awaiting" || p.status === "judging")) return { ...p, status: "denied" };
         if (p.type === "tool" && p.status === "running") return { ...p, status: "error", output: p.output ?? "中断されました" };
         return p;
       });

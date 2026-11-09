@@ -41,3 +41,14 @@ test("apply builds an assistant message from streamed events", async () => {
   expect(before[1]).not.toBe(m[1]); // immutable for React
   expect(apply(m, { t: "truncate", at: 0 })).toEqual([]);
 });
+
+test("neverAuto keeps risky commands for the user and lets plain ones through to Jev", async () => {
+  const { neverAuto } = await import("./approve");
+  for (const cmd of [
+    "rm -rf build", "sudo apt install x", "git push origin main", "cd a && git reset --hard", "echo $(cat x)",
+    "cat .env", "/usr/bin/git push", "env FOO=1 bash -c 'x'", "bun -e 'x'", "echo hi > out.txt", "curl -X POST https://x",
+    "npx vercel deploy", "FOO=bar rm -fr .", "ls | xargs rm",
+  ]) expect([cmd, neverAuto(cmd)]).not.toEqual([cmd, null]);
+  for (const cmd of ["ls -la", "git status", "bun test 2>&1", "cat src/a.ts | head -20", "git diff > /dev/null", "./node_modules/.bin/tsc --noEmit", "grep -rn TODO ."])
+    expect([cmd, neverAuto(cmd)]).toEqual([cmd, null]);
+});

@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { apply, type Account, type AssistantMessage, type ConvMeta, type Effort, type Message, type Part, type Push, type UserMessage } from "../shared";
+import { apply, type Account, type Judge, type AssistantMessage, type ConvMeta, type Effort, type Message, type Part, type Push, type UserMessage } from "../shared";
 
 // ─── utilities ────────────────────────────────────────────────────────────
 
@@ -16,6 +16,7 @@ type ServerState = {
   models: { id: string; name: string }[];
   efforts: { id: Effort; name: string }[];
   defaultModel: string;
+  jev: boolean;
 };
 type ToolPart = Extract<Part, { type: "tool" }>;
 type ReasoningPart = Extract<Part, { type: "reasoning" }>;
@@ -119,6 +120,7 @@ const ICONS: Record<string, ReactNode> = {
   monitor: <><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></>,
   logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></>,
   ring: <circle cx="12" cy="12" r="7" strokeDasharray="2.2 2.6" />,
+  shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-4" /></>,
   alert: <><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></>,
   ban: <><circle cx="12" cy="12" r="9" /><path d="m5.6 5.6 12.8 12.8" /></>,
   folder: <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />,
@@ -298,12 +300,16 @@ function Diff({ before, after }: { before: string; after: string }) {
   );
 }
 
+const pct = (v?: number) => (v === undefined ? "-" : `${Math.round(v * 100)}%`);
+const judgeDetail = (j: Judge) => `取り消せる操作 ${pct(j.reversible)}、依頼に沿う ${pct(j.servesTask)}`;
+
 function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => void }) {
   const [open, setOpen] = useState(false);
   const v = TOOL_VIEW[p.name] ?? { icon: "terminal", verb: p.name, key: "" };
   const a = parseArgs(p.args);
   const target = a[v.key] ?? "";
   const status: Record<ToolPart["status"], ReactNode> = {
+    judging: <span className="badge judging"><span className="spin" />自動判定中</span>,
     running: <span className="spin" aria-label="実行中" />,
     awaiting: <span className="badge wait">承認待ち</span>,
     done: <span className="ok"><Icon name="check" size={14} /></span>,
@@ -321,12 +327,24 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
         <span className="step-node"><Icon name={v.icon} size={14} /></span>
         <span className="step-verb">{v.verb}</span>
         <span className="step-target mono">{p.name === "bash" ? target.split("\n")[0] : target}</span>
+        {p.judge?.ok && (
+          <span className="badge auto" title={judgeDetail(p.judge)}>
+            <Icon name="shield" size={12} />
+            自動で許可
+          </span>
+        )}
         <span className="step-status">{status[p.status]}</span>
         <span className={`step-caret ${open ? "open" : ""}`}><Icon name="chevron" size={14} /></span>
       </button>
       {p.status === "awaiting" && (
         <div className="approve" role="group" aria-label="コマンドの実行の承認">
           <p>このコマンドを実行しますか？</p>
+          {p.judge && !p.judge.ok && (
+            <p className="approve-why">
+              自動では許可しませんでした。{p.judge.reason}。
+              {p.judge.by === "jev" && <span className="scores">{judgeDetail(p.judge)}</span>}
+            </p>
+          )}
           <pre className="cmd">{`$ ${a.command ?? ""}`}</pre>
           <div className="approve-actions">
             <button type="button" className="btn primary" onClick={() => onApprove(true)}>実行する</button>
@@ -336,6 +354,13 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
       )}
       {open && (
         <div className="step-body">
+          {p.judge && p.status !== "awaiting" && (
+            <p className="judge-line">
+              <Icon name="shield" size={13} />
+              {p.judge.ok ? "Jev の判定で自動的に許可しました。" : `自動では許可しませんでした。${p.judge.reason ?? ""}。`}
+              {p.judge.by === "jev" && <span className="scores">{judgeDetail(p.judge)}</span>}
+            </p>
+          )}
           {body}
           {p.output !== undefined && <pre className={`out ${p.status === "error" ? "bad" : ""}`}>{p.output}</pre>}
         </div>
@@ -494,16 +519,18 @@ function Thread({ conv, models, onApprove, onEdit, onRegenerate, onImage }: {
 
 // ─── composer ─────────────────────────────────────────────────────────────
 
-function ModelPicker({ models, efforts, model, effort, onModel, onEffort }: {
-  models: ServerState["models"]; efforts: ServerState["efforts"]; model: string; effort: Effort;
-  onModel: (m: string) => void; onEffort: (e: Effort) => void;
+function ModelPicker({ models, efforts, model, effort, jev, autoApprove, onModel, onEffort, onAutoApprove }: {
+  models: ServerState["models"]; efforts: ServerState["efforts"]; model: string; effort: Effort; jev: boolean; autoApprove: boolean;
+  onModel: (m: string) => void; onEffort: (e: Effort) => void; onAutoApprove: (v: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss(open, close);
+  const auto = jev && autoApprove;
   return (
     <div className="picker" ref={ref}>
       <button type="button" className="picker-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">
+        {auto && <span className="picker-auto" title="コマンドの自動承認が有効です"><Icon name="shield" size={14} /></span>}
         <span>{models.find((m) => m.id === model)?.name ?? model}</span>
         <span className="picker-effort">{efforts.find((e) => e.id === effort)?.name}</span>
         <Icon name="chevron" size={14} />
@@ -527,6 +554,16 @@ function ModelPicker({ models, efforts, model, effort, onModel, onEffort }: {
               </button>
             ))}
           </div>
+          <div className="pop-sep" />
+          <label className={`toggle-row ${jev ? "" : "is-off"}`}>
+            <span className="toggle-text">
+              <span>コマンドの自動承認</span>
+              <span className="toggle-help">
+                {jev ? "TypeSafe の Jev が安全と判定したコマンドは、確認せずに実行します" : "TYPESAFE_API_KEY を設定すると使えます"}
+              </span>
+            </span>
+            <input type="checkbox" role="switch" className="switch" checked={auto} disabled={!jev} onChange={(e) => onAutoApprove(e.target.checked)} />
+          </label>
         </div>
       )}
     </div>
@@ -802,7 +839,7 @@ function App() {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [prefs, setPrefs] = useStored<{ model?: string; effort: Effort }>("shiro.new", { effort: "medium" });
+  const [prefs, setPrefs] = useStored<{ model?: string; effort: Effort; autoApprove?: boolean }>("shiro.new", { effort: "medium" });
 
   const seq = useRef(0);
   const buffer = useRef<Push[] | null>(null);
@@ -938,6 +975,7 @@ function App() {
   const authed = !!srv?.account;
   const model = conv?.meta.model ?? prefs.model ?? srv?.defaultModel ?? "";
   const effort = conv?.meta.effort ?? prefs.effort;
+  const autoApprove = conv?.meta.autoApprove ?? prefs.autoApprove ?? true;
   const running = !!conv?.meta.running;
   const draftKey = currentId ?? "new";
 
@@ -945,7 +983,7 @@ function App() {
     try {
       let id = currentId;
       if (!id) {
-        const meta = await api<ConvMeta>("/api/conversations", { model, effort });
+        const meta = await api<ConvMeta>("/api/conversations", { model, effort, autoApprove });
         seq.current = 0;
         setConv({ meta, messages: [] });
         navigate(meta.id);
@@ -982,7 +1020,10 @@ function App() {
       model={model}
       effort={effort}
       onModel={(m) => (conv ? patch({ model: m }) : setPrefs({ ...prefs, model: m }))}
+      jev={srv.jev}
+      autoApprove={autoApprove}
       onEffort={(e) => (conv ? patch({ effort: e }) : setPrefs({ ...prefs, effort: e }))}
+      onAutoApprove={(v) => (conv ? patch({ autoApprove: v }) : setPrefs({ ...prefs, autoApprove: v }))}
     />
   );
 
@@ -1051,7 +1092,10 @@ function App() {
             />
             <div className="dock">
               {composerEl}
-              <p className="disclaimer">shiro はこのマシン上でファイルを読み書きします。コマンドは実行前に確認します。</p>
+              <p className="disclaimer">
+                shiro はこのマシン上でファイルを読み書きします。
+                {srv?.jev && autoApprove ? "Jev が安全と判定したコマンドは確認せずに実行し、それ以外は実行前に確認します。" : "コマンドは実行前に確認します。"}
+              </p>
             </div>
           </>
         ) : loading || (currentId && !conv) ? (
