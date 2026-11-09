@@ -3,12 +3,13 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { homedir } from "node:os";
 import type { ResponseInputItem } from "openai/resources/responses/responses";
-import { apply, type ConvMeta, type Effort, type Message } from "./shared";
+import type { ConvMeta, Effort, Message } from "./shared";
 
+/** messages is what the UI shows; items is the model's history, which can differ (encrypted reasoning, tool calls). */
 export type Conv = { meta: ConvMeta; messages: Message[]; items: ResponseInputItem[] };
 
 const path = process.env.SHIRO_DB ?? `${homedir()}/.shiro/shiro.db`;
-if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
+mkdirSync(dirname(path), { recursive: true });
 const db = new Database(path, { create: true, strict: true });
 db.run("PRAGMA journal_mode = WAL");
 db.run(`CREATE TABLE IF NOT EXISTS conversations (
@@ -21,7 +22,7 @@ if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().so
 
 type Row = { id: string; title: string; model: string; effort: Effort; created_at: number; updated_at: number; auto_approve: number };
 const meta = (r: Row): ConvMeta => ({
-  id: r.id, title: r.title, model: r.model, effort: r.effort, autoApprove: r.auto_approve === 1, createdAt: r.created_at, updatedAt: r.updated_at, running: false,
+  id: r.id, title: r.title, model: r.model, effort: r.effort, autoApprove: r.auto_approve === 1, createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
 const cache = new Map<string, Conv>();
@@ -31,27 +32,20 @@ export function list(): ConvMeta[] {
   return rows.map((r) => cache.get(r.id)?.meta ?? meta(r));
 }
 
+/** The same object is returned on every call, so changes to it are seen everywhere until save() persists them. */
 export function get(id: string): Conv | undefined {
   const hit = cache.get(id);
   if (hit) return hit;
   const r = db.query<Row & { messages: string; items: string }, [string]>("SELECT * FROM conversations WHERE id = ?").get(id);
   if (!r) return;
-  let messages = JSON.parse(r.messages) as Message[];
-  // A turn that was streaming when the process died can never finish.
-  const last = messages.at(-1);
-  if (last?.role === "assistant" && last.status === "streaming") messages = apply(messages, { t: "end", status: "stopped" });
-  const conv = { meta: meta(r), messages, items: JSON.parse(r.items) };
+  const conv = { meta: meta(r), messages: JSON.parse(r.messages), items: JSON.parse(r.items) };
   cache.set(id, conv);
   return conv;
 }
 
-export function create(model: string, effort: Effort, autoApprove: boolean): Conv {
+export function create(m: Pick<ConvMeta, "model" | "effort" | "autoApprove">): Conv {
   const now = Date.now();
-  const conv: Conv = {
-    meta: { id: crypto.randomUUID(), title: "新しい会話", model, effort, autoApprove, createdAt: now, updatedAt: now, running: false },
-    messages: [],
-    items: [],
-  };
+  const conv: Conv = { meta: { id: crypto.randomUUID(), title: "新しい会話", ...m, createdAt: now, updatedAt: now }, messages: [], items: [] };
   cache.set(conv.meta.id, conv);
   save(conv);
   return conv;

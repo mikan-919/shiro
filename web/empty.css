@@ -1,0 +1,59 @@
+/* ─── empty state ──────────────────────────────────────────────────── */
+
+.empty {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 12vh;
+}
+.ring { width: 200px; height: 200px; margin-bottom: 4px; }
+.ring path {
+  fill: none;
+  stroke: var(--text);
+  stroke-linecap: round;
+}
+/* First appearance only: the colony grows outward. Rare, so it may take its time. */
+.ring.grow path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: hypha 2.6s var(--ease-out) forwards;
+}
+@keyframes hypha { to { stroke-dashoffset: 0; } }
+
+.greeting {
+  font: 500 clamp(25px, 3.6vw, 34px) / 1.45 var(--mincho);
+  letter-spacing: 0.06em;
+  margin: 0 0 28px;
+  text-align: center;
+  text-wrap: balance;
+}
+.empty-composer { width: min(var(--column), 100%); }
+.suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; max-width: var(--column); }
+.chip {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 13.5px;
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, transform 160ms var(--ease-out);
+}
+.chip:hover { border-color: var(--muted); color: var(--text); }
+.chip:active { transform: scale(0.97); }
+
+.login { display: grid; justify-items: center; text-align: center; max-width: 30rem; }
+.login .greeting { margin-bottom: 12px; }
+.login p { color: var(--muted); margin: 0 0 24px; font-size: 14.5px; }
+
+/* A new chat assembles top to bottom: ring, greeting, composer, suggestions, 40ms apart. */
+.empty > * { transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out); }
+.empty > :nth-child(2) { transition-delay: 40ms; }
+.empty > :nth-child(3) { transition-delay: 80ms; }
+.empty > :nth-child(4) { transition-delay: 120ms; }
+@starting-style { .empty > * { opacity: 0; transform: translateY(6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ring.grow path { animation: none; stroke-dashoffset: 0; }
+}

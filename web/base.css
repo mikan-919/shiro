@@ -1,0 +1,219 @@
+/* shiro — soil and mycelium.
+   Light theme is the white of hyphae; dark theme is humus. Pine green means "allowed", rust means "stop". */
+
+:root {
+  --bg: #efefea;
+  --side-bg: #e6e5df;
+  --surface: #e3e2db;
+  --raised: #fafaf7;
+  --line: #d4d1c6;
+  --text: #221e18;
+  --muted: #6b6457;
+  --faint: #978f80;
+  --pine: #4e6e43;
+  --rust: #b24a33;
+  --ochre: #8a6431;
+  --accent-bg: #221e18;
+  --accent-fg: #efefea;
+  --code-bg: #e8e7e1;
+  --shadow: 0 1px 0 rgb(34 30 24 / 0.04), 0 10px 28px -14px rgb(34 30 24 / 0.28);
+  --scrim: rgb(34 30 24 / 0.32);
+
+  --sans: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif;
+  --mincho: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --column: 46rem;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1c1814;
+    --side-bg: #17130f;
+    --surface: #26211b;
+    --raised: #2b251e;
+    --line: #3a332a;
+    --text: #eae8e0;
+    --muted: #a39a8b;
+    --faint: #776f62;
+    --pine: #8aac7a;
+    --rust: #de7c62;
+    --ochre: #c99a5b;
+    --accent-bg: #eae8e0;
+    --accent-fg: #1c1814;
+    --code-bg: #14110d;
+    --shadow: 0 1px 0 rgb(0 0 0 / 0.2), 0 12px 32px -14px rgb(0 0 0 / 0.6);
+    --scrim: rgb(0 0 0 / 0.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1c1814;
+  --side-bg: #17130f;
+  --surface: #26211b;
+  --raised: #2b251e;
+  --line: #3a332a;
+  --text: #eae8e0;
+  --muted: #a39a8b;
+  --faint: #776f62;
+  --pine: #8aac7a;
+  --rust: #de7c62;
+  --ochre: #c99a5b;
+  --accent-bg: #eae8e0;
+  --accent-fg: #1c1814;
+  --code-bg: #14110d;
+  --shadow: 0 1px 0 rgb(0 0 0 / 0.2), 0 12px 32px -14px rgb(0 0 0 / 0.6);
+  --scrim: rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+/* ─── base ─────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 16px/1.6 var(--sans);
+  font-feature-settings: "palt" 0;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+button:disabled { cursor: default; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border-radius: 6px; }
+::selection { background: color-mix(in srgb, var(--pine) 35%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+kbd {
+  font: 500 11px/1 var(--sans);
+  color: var(--faint);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 5px;
+  white-space: nowrap;
+}
+
+.icon { flex: none; display: block; }
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--muted);
+  transition: background-color 0.12s, color 0.12s;
+}
+.icon-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.icon-btn:disabled { opacity: 0.35; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.12s, border-color 0.12s, transform 160ms var(--ease-out);
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: 0.45; }
+.btn.primary { background: var(--accent-bg); color: var(--accent-fg); border-color: var(--accent-bg); }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-bg) 86%, var(--bg)); }
+.btn.danger { background: var(--rust); border-color: var(--rust); color: #fff; }
+.btn.small { padding: 4px 10px; font-size: 13px; border-radius: 8px; }
+.btn.large { padding: 11px 22px; font-size: 15px; border-radius: 12px; }
+
+.spin {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+.spin.large { width: 22px; height: 22px; color: var(--faint); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.btn:not(:disabled):active { transform: scale(0.97); }
+
+@keyframes breathe { 50% { opacity: 0.35; } }
+
+pre {
+  margin: 6px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--code-bg);
+  font: 13px/1.6 var(--mono);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ─── popovers ─────────────────────────────────────────────────────── */
+
+.popover {
+  position: absolute;
+  z-index: 50;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+@starting-style { .popover { opacity: 0; transform: scale(0.97); } }
+.pop-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+}
+.pop-item:hover { background: var(--surface); }
+.pop-item > span { flex: 1; }
+.pop-item.danger { color: var(--rust); }
+.pop-sep { height: 1px; background: var(--line); margin: 6px 4px; }
+.pop-label { margin: 4px 10px 6px; font-size: 12px; color: var(--faint); }
+/* Popovers leave faster than they arrive: the system answering, not the user deciding. */
+.popover.leaving { opacity: 0; transform: scale(0.97); transition-duration: 100ms; pointer-events: none; }
+
+/* Panels that open and close in place (step details, the approval card): an accordion, the one case
+   where animating height is acceptable, done with grid rows so content needs no measuring. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 220ms var(--ease-out), opacity 220ms var(--ease-out);
+}
+.collapse.open { grid-template-rows: 1fr; opacity: 1; }
+@starting-style { .collapse.open { grid-template-rows: 0fr; opacity: 0; } }
+.collapse-inner { overflow: hidden; min-height: 0; }
+
+/* A row of options whose selection is a thumb sliding behind the buttons. Each row sets the thumb size. */
+.seg { position: relative; }
+.seg > button { position: relative; z-index: 1; transition: color 150ms ease; }
+.seg-thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; transition: transform 220ms var(--ease-out); }
+
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 240ms; animation-timing-function: var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Fewer, gentler: transitions still fade and recolour but nothing moves, resizes or slides. */
+  *, *::before, *::after { transition-property: opacity, color, background-color, border-color !important; }
+  .spin { animation: breathe 1.6s ease-in-out infinite; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}

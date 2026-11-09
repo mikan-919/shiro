@@ -15,16 +15,43 @@ export const EFFORTS = [
   { id: "xhigh", name: "最大" },
 ] as const;
 export type Effort = (typeof EFFORTS)[number]["id"];
+export const isEffort = (v: unknown): v is Effort => EFFORTS.some((e) => e.id === v);
+
+/** What a new conversation starts with when the user has not chosen otherwise. */
+export const DEFAULTS = { effort: "medium" as Effort, autoApprove: true };
 
 export type ToolStatus = "judging" | "running" | "awaiting" | "done" | "denied" | "error";
 
 /** Outcome of automatic approval. by: "rule" = static list, "jev" = TypeSafe Jev, "error" = Jev unavailable. */
 export type Judge = { ok: boolean; by: "rule" | "jev" | "error"; reason?: string; readOnly?: number; reversible?: number; servesTask?: number };
 
-export type Part =
-  | { type: "reasoning"; text: string; done: boolean }
-  | { type: "text"; text: string }
-  | { type: "tool"; id: string; name: string; args: string; status: ToolStatus; output?: string; judge?: Judge };
+/** How a tool call is shown. Each tool computes its own on the server, so the browser needs no per-tool code. */
+export type ToolView = {
+  label: string;
+  icon: string;
+  /** One line naming what the call acts on: a path, a command, a search objective. */
+  target: string;
+  /** Text the user approves before the call runs. Present only for calls that need approval. */
+  request?: string;
+  detail?: { kind: "diff"; before: string; after: string } | { kind: "code"; text: string } | { kind: "chips"; items: string[] };
+  /** The output is Markdown rather than plain text. */
+  markdown?: boolean;
+};
+
+export type ToolPart = {
+  type: "tool";
+  id: string;
+  name: string;
+  args: string;
+  view: ToolView;
+  status: ToolStatus;
+  output?: string;
+  /** The gist of the result in one line. */
+  summary?: string;
+  judge?: Judge;
+};
+export type ReasoningPart = { type: "reasoning"; text: string; done: boolean };
+export type Part = ReasoningPart | { type: "text"; text: string } | ToolPart;
 
 export type UserMessage = { id: string; role: "user"; text: string; images: string[]; itemIndex: number };
 export type AssistantMessage = {
@@ -45,8 +72,9 @@ export type ConvMeta = {
   autoApprove: boolean;
   createdAt: number;
   updatedAt: number;
-  running: boolean;
 };
+/** A conversation as the browser sees it: stored metadata plus whether a turn is running right now. */
+export type ConvView = ConvMeta & { running: boolean };
 
 export type Ev =
   | { t: "user"; msg: UserMessage }
@@ -54,20 +82,20 @@ export type Ev =
   | { t: "reasoning_delta"; text: string }
   | { t: "reasoning_end" }
   | { t: "text_delta"; text: string }
-  | { t: "tool"; id: string; name: string; args: string }
-  | { t: "tool_status"; id: string; status: ToolStatus; output?: string }
+  | { t: "tool"; id: string; name: string; args: string; view: ToolView; summary?: string }
+  | { t: "tool_status"; id: string; status: ToolStatus; output?: string; summary?: string }
   | { t: "tool_judge"; id: string; judge: Judge }
   | { t: "end"; status: "done" | "stopped" | "error"; error?: string }
   | { t: "truncate"; at: number };
 
+export type Account = { email?: string; plan?: string };
+
 /** Server → browser over the WebSocket. */
 export type Push =
   | { type: "ev"; conv: string; seq: number; ev: Ev }
-  | { type: "meta"; meta: ConvMeta }
+  | { type: "meta"; meta: ConvView }
   | { type: "deleted"; id: string }
   | { type: "auth"; account: Account | null };
-
-export type Account = { email?: string; plan?: string };
 
 /** Pure: returns a new array, leaving the input untouched (React state). */
 export function apply(msgs: Message[], ev: Ev): Message[] {
@@ -95,13 +123,14 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
       else parts.push({ type: "text", text: ev.text });
       break;
     case "tool":
-      parts.push({ type: "tool", id: ev.id, name: ev.name, args: ev.args, status: "running" });
+      parts.push({ type: "tool", id: ev.id, name: ev.name, args: ev.args, view: ev.view, summary: ev.summary, status: "running" });
       break;
     case "tool_status":
     case "tool_judge": {
       const i = parts.findIndex((p) => p.type === "tool" && p.id === ev.id);
-      const p = parts[i] as Extract<Part, { type: "tool" }> | undefined;
-      if (p) parts[i] = ev.t === "tool_status" ? { ...p, status: ev.status, output: ev.output } : { ...p, judge: ev.judge };
+      const p = parts[i] as ToolPart | undefined;
+      if (!p) break;
+      parts[i] = ev.t === "tool_judge" ? { ...p, judge: ev.judge } : { ...p, status: ev.status, output: ev.output, summary: ev.summary ?? p.summary };
       break;
     }
     case "end": {
@@ -118,6 +147,6 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
   return [...msgs.slice(0, -1), { ...last, parts }];
 }
 
-/** Text the assistant produced in a message, used to keep context when a turn is cut short. */
+/** The text an assistant message said, without its reasoning and tool calls. */
 export const assistantText = (m: AssistantMessage) =>
   m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n\n");

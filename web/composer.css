@@ -1,0 +1,123 @@
+.picker { position: relative; }
+.picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px 0 12px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.picker-btn:hover { background: var(--surface); color: var(--text); }
+.picker-effort { color: var(--faint); font-weight: 400; }
+.picker-pop { right: 0; width: 272px; overflow-y: auto; }
+.picker-pop.up { bottom: calc(100% + 8px); transform-origin: bottom right; }
+.picker-pop.down { top: calc(100% + 8px); transform-origin: top right; }
+@media (max-width: 480px) { .picker-effort { display: none; } }
+
+.segmented { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 2px; margin: 0 4px 4px; background: var(--surface); border-radius: 10px; }
+.segmented button { padding: 6px 0; border-radius: 8px; font-size: 12.5px; color: var(--muted); }
+.segmented button.on { color: var(--text); font-weight: 500; }
+
+/* ─── composer ─────────────────────────────────────────────────────── */
+
+.composer {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: var(--shadow);
+  padding: 12px 10px 8px 18px;
+  cursor: text;
+  transition: border-color 0.15s;
+}
+.composer:focus-within { border-color: color-mix(in srgb, var(--text) 38%, var(--line)); }
+.composer.is-disabled { opacity: 0.55; }
+.composer textarea {
+  display: block;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: none;
+  resize: none;
+  font-size: 16px;
+  line-height: 1.65;
+  padding: 2px 8px 6px 0;
+  max-height: 40vh;
+}
+.composer textarea::placeholder { color: var(--faint); }
+.composer-bar { display: flex; align-items: center; gap: 4px; margin-left: -8px; }
+.grow { flex: 1; }
+.send {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-bg);
+  color: var(--accent-fg);
+  margin-left: 4px;
+  transition: opacity 120ms ease, transform 160ms var(--ease-out);
+}
+.send:disabled { opacity: 0.22; }
+.send:not(:disabled):active { transform: scale(0.97); }
+
+.attachments { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px -6px; }
+.attach { position: relative; width: 64px; height: 64px; }
+.attach img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); }
+.attach button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-bg);
+  color: var(--accent-fg);
+}
+
+
+.picker-auto { color: var(--pine); display: grid; }
+
+.toggle-row { display: flex; align-items: center; gap: 12px; padding: 6px 10px 8px; cursor: pointer; }
+.toggle-row.is-off { cursor: default; }
+.toggle-text { display: grid; gap: 2px; flex: 1; font-size: 14px; }
+.toggle-help { font-size: 12px; color: var(--faint); line-height: 1.5; }
+.switch {
+  appearance: none;
+  flex: none;
+  width: 36px;
+  height: 21px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--line);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2.5px;
+  left: 2.5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--raised);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s;
+}
+.switch:checked { background: var(--pine); }
+.switch:checked::after { transform: translateX(15px); }
+.switch:disabled { opacity: 0.4; cursor: default; }
+
+.send .icon { transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out); }
+@starting-style { .send .icon { opacity: 0; transform: scale(0.6); } }
+
+.attach { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+@starting-style { .attach { opacity: 0; transform: scale(0.9); } }
+
+.segmented .seg-thumb { width: calc((100% - 10px) / 4); border-radius: 8px; background: var(--raised); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }

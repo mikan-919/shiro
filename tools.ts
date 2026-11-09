@@ -1,7 +1,27 @@
 import type { FunctionTool } from "openai/resources/responses/responses";
-import { SEARCH_TOOL, searchEnabled, webSearch } from "./search";
+import type { ToolView } from "./shared";
+import { searchTool } from "./search";
 
-const tool = (name: string, description: string, props: Record<string, string>): FunctionTool => ({
+export type Args = Record<string, unknown>;
+export type ToolContext = { signal: AbortSignal; model: string };
+
+/** Everything about one tool: what the model sees, how it runs, and how the UI shows it. */
+export type Tool = {
+  def: FunctionTool;
+  enabled?: () => boolean;
+  view: (a: Args) => ToolView;
+  /** The text the user must approve before the call runs; tools without it run unattended. */
+  approval?: (a: Args) => string;
+  run: (a: Args, ctx: ToolContext) => Promise<string>;
+  /** One line about the call: from its arguments before it runs, from its output once done. */
+  summary?: (a: Args, output?: string) => string | undefined;
+};
+
+export const str = (v: unknown) => (typeof v === "string" ? v : "");
+export const firstLine = (s: string) => s.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+const lineCount = (s: string) => (s ? s.replace(/\n$/, "").split("\n").length : 0);
+
+const def = (name: string, description: string, props: Record<string, string>): FunctionTool => ({
   type: "function",
   name,
   description,
@@ -14,51 +34,74 @@ const tool = (name: string, description: string, props: Record<string, string>):
   },
 });
 
-const BASE = [
-  tool("read_file", "Read a text file.", { path: "File path" }),
-  tool("write_file", "Create or overwrite a file.", { path: "File path", content: "Full file content" }),
-  tool("edit_file", "Replace one exact, unique occurrence of old_str with new_str.", {
-    path: "File path", old_str: "Exact text to replace", new_str: "Replacement text",
-  }),
-  tool("bash", "Run a shell command in the current directory. The user approves each call.", { command: "Command" }),
-];
-
-/** Web search is offered only when a Parallel API key is configured. */
-export const tools = () => (searchEnabled() ? [...BASE, SEARCH_TOOL] : BASE);
-
 // Keeps one huge file or log from filling the context window.
 const LIMIT = 50_000;
 const cap = (s: string) => (s.length > LIMIT ? `${s.slice(0, LIMIT)}\n… (${s.length - LIMIT} chars truncated)` : s);
 
-export async function runTool(
-  name: string,
-  a: Record<string, any>,
-  confirm: (command: string) => Promise<boolean>,
-  signal?: AbortSignal,
-  model = "",
-): Promise<string> {
-  switch (name) {
-    case "web_search":
-      if (!searchEnabled()) throw new Error("web search is not configured");
-      return webSearch(String(a.objective ?? ""), Array.isArray(a.search_queries) ? a.search_queries.map(String) : [], model, signal);
-    case "read_file":
-      return cap(await Bun.file(a.path!).text());
-    case "write_file":
-      await Bun.write(a.path!, a.content!);
-      return `wrote ${a.path}`;
-    case "edit_file": {
-      const text = await Bun.file(a.path!).text();
-      const n = text.split(a.old_str!).length - 1;
-      if (n !== 1) throw new Error(`old_str matched ${n} times, need exactly 1`);
-      await Bun.write(a.path!, text.replace(a.old_str!, () => a.new_str!));
-      return `edited ${a.path}`;
-    }
-    case "bash": {
-      if (!(await confirm(a.command!))) return "user denied this command";
-      const p = Bun.spawn(["bash", "-c", a.command!], { stdout: "pipe", stderr: "pipe", signal });
-      const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-      return cap(`exit ${code}\n${out}${err}`);
-    }
+const readFile: Tool = {
+  def: def("read_file", "Read a text file.", { path: "File path" }),
+  view: (a) => ({ label: "読み込み", icon: "file", target: str(a.path) }),
+  run: async (a) => cap(await Bun.file(str(a.path)).text()),
+  summary: (_, out) => (out === undefined ? undefined : firstLine(out) || "空のファイル"),
+};
+
+const writeFile: Tool = {
+  def: def("write_file", "Create or overwrite a file.", { path: "File path", content: "Full file content" }),
+  view: (a) => ({ label: "書き込み", icon: "file", target: str(a.path), detail: { kind: "code", text: str(a.content) } }),
+  run: async (a) => {
+    await Bun.write(str(a.path), str(a.content));
+    return `wrote ${str(a.path)}`;
+  },
+  summary: (a) => firstLine(str(a.content)) || "空のファイル",
+};
+
+const editFile: Tool = {
+  def: def("edit_file", "Replace one exact, unique occurrence of old_str with new_str.", {
+    path: "File path", old_str: "Exact text to replace", new_str: "Replacement text",
+  }),
+  view: (a) => ({ label: "編集", icon: "pencil", target: str(a.path), detail: { kind: "diff", before: str(a.old_str), after: str(a.new_str) } }),
+  run: async (a) => {
+    const [path, from, to] = [str(a.path), str(a.old_str), str(a.new_str)];
+    const text = await Bun.file(path).text();
+    const n = text.split(from).length - 1;
+    if (n !== 1) throw new Error(`old_str matched ${n} times, need exactly 1`);
+    await Bun.write(path, text.replace(from, () => to));
+    return `edited ${path}`;
+  },
+  summary: (a) => `−${lineCount(str(a.old_str))} +${lineCount(str(a.new_str))}  ${firstLine(str(a.new_str))}`,
+};
+
+// The model reads bash output as "exit <code>\n<stdout><stderr>"; summary() reads the same shape back.
+const bash: Tool = {
+  def: def("bash", "Run a shell command in the current directory. The user approves each call.", { command: "Command" }),
+  view: (a) => ({ label: "コマンド", icon: "terminal", target: firstLine(str(a.command)), detail: { kind: "code", text: `$ ${str(a.command)}` } }),
+  approval: (a) => str(a.command),
+  run: async (a, { signal }) => {
+    const p = Bun.spawn(["bash", "-c", str(a.command)], { stdout: "pipe", stderr: "pipe", signal });
+    const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+    return cap(`exit ${code}\n${out}${err}`);
+  },
+  summary: (_, out) => {
+    if (out === undefined) return undefined;
+    const [, code = "0", rest = ""] = /^exit (\S+)\n?([\s\S]*)$/.exec(out) ?? [];
+    const line = firstLine(rest);
+    return code === "0" ? line || "出力なし" : `終了コード ${code}${line ? `: ${line}` : ""}`;
+  },
+};
+
+const ALL = [readFile, writeFile, editFile, bash, searchTool];
+
+/** The tools offered to the model right now. */
+export const available = () => ALL.filter((t) => t.enabled?.() ?? true);
+
+/** Any tool by name, enabled or not, for showing calls already in a conversation. */
+export const toolNamed = (name: string) => ALL.find((t) => t.def.name === name);
+
+export function parseArgs(json: string): Args {
+  try {
+    const v = JSON.parse(json);
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
   }
-  throw new Error(`unknown tool ${name}`);
 }
