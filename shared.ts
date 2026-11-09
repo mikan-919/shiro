@@ -75,6 +75,7 @@ export type ConvMeta = {
   createdAt: number;
   updatedAt: number;
 };
+export type Settings = Pick<ConvMeta, "model" | "effort" | "autoApprove">;
 export type ConvView = ConvMeta & { running: boolean };
 
 export type Ev =

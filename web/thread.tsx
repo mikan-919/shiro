@@ -102,13 +102,13 @@ export function Thread({ conv, known, onApprove, onEdit, onRegenerate, onImage }
   onApprove: (tool: string, ok: boolean) => void; onEdit: (from: UserMessage, text: string) => void;
   onRegenerate: () => void; onImage: (src: string) => void;
 }) {
-  const follow = useFollowBottom<HTMLDivElement>({ tau: 200, near: 96, resetKey: conv.meta.id });
+  const follow = useFollowBottom<HTMLDivElement, HTMLDivElement>({ tau: 200, near: 96 });
   const busy = conv.meta.running;
   const lastAssistant = conv.messages.findLastIndex((m) => m.role === "assistant");
 
   return (
-    <div className="thread" ref={follow.ref} onScroll={follow.onScroll} onWheel={follow.onUserScroll} onTouchStart={follow.onUserScroll}>
-      <div className="column" key={conv.meta.id}>
+    <div className="thread" {...follow.scroller}>
+      <div className="column" ref={follow.content}>
         {conv.messages.map((m, i) =>
           m.role === "user" ? (
             <UserBubble key={m.id} m={m} fresh={!known.has(m.id)} busy={busy} onEdit={(t) => onEdit(m, t)} onImage={onImage} />

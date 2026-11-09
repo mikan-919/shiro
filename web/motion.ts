@@ -30,10 +30,12 @@ export function useLinger<T>(value: T | null, ms: number) {
  * frame-rate independent linear interpolation: each frame closes 1 - e^(-dt/tau) of the remaining distance,
  * reading the latest target every frame, so content arriving mid-glide just extends it.
  * A wheel or touch scroll by the user stops the glide; scrolling back near the bottom pins it again.
- * Changing `resetKey` (a different conversation) lands on the bottom at once.
+ * Spread `scroller` on the scrolling element and put `content` on the element whose growth it follows.
+ * `onScroll` runs on every scroll, the glide's own frames included.
  */
-export function useFollowBottom<T extends HTMLElement>({ tau, near, resetKey }: { tau: number; near: number; resetKey?: unknown }) {
-  const ref = useRef<T>(null);
+export function useFollowBottom<S extends HTMLElement, C extends HTMLElement>({ tau, near, onScroll: also }: { tau: number; near: number; onScroll?: () => void }) {
+  const ref = useRef<S>(null);
+  const content = useRef<C>(null);
   const stick = useRef(true);
   const pos = useRef(0);
   const raf = useRef(0);
@@ -65,22 +67,21 @@ export function useFollowBottom<T extends HTMLElement>({ tau, near, resetKey }: 
     raf.current = requestAnimationFrame(step);
   }, [tau]);
 
+  // A new scroller starts at its end; gliding there from the top would be noise.
   useLayoutEffect(() => {
-    stop();
-    stick.current = true;
-    setAway(false);
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
-  }, [resetKey, stop]);
+  }, []);
   useEffect(() => stop, [stop]);
   useEffect(() => {
-    const content = ref.current?.firstElementChild;
-    if (!content) return;
+    const el = content.current;
+    if (!el) return;
     const ro = new ResizeObserver(() => stick.current && glide());
-    ro.observe(content);
+    ro.observe(el);
     return () => ro.disconnect();
-  }, [glide, resetKey]);
+  }, [glide]);
 
   const onScroll = () => {
+    also?.();
     const el = ref.current;
     if (!el || raf.current) return; // our own frames
     const isNear = el.scrollHeight - el.scrollTop - el.clientHeight < near;
@@ -92,5 +93,5 @@ export function useFollowBottom<T extends HTMLElement>({ tau, near, resetKey }: 
     setAway(false);
     glide();
   };
-  return { ref, away, onScroll, onUserScroll: stop, toBottom };
+  return { scroller: { ref, onScroll, onWheel: stop, onTouchStart: stop }, content, away, toBottom };
 }

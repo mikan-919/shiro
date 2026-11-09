@@ -1,5 +1,5 @@
 // Reasoning and tool calls, shown as one thread of steps.
-import { useCallback, useLayoutEffect, useState, type ReactNode } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 import type { Judge, ReasoningPart, ToolPart, ToolView } from "../shared";
 import { Collapse, Icon } from "./ui";
 import { useFollowBottom } from "./motion";
@@ -119,27 +119,21 @@ function ApproveCard({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) =
  * Approval cards sit below it, so a pending one is never scrolled out of view or faded at the edge.
  */
 export function StepChain({ parts, onApprove }: { parts: (ReasoningPart | ToolPart)[]; onApprove: (tool: string, ok: boolean) => void }) {
-  const follow = useFollowBottom<HTMLDivElement>({ tau: 1000, near: 24 });
+  const follow = useFollowBottom<HTMLDivElement, HTMLOListElement>({ tau: 1000, near: 24, onScroll: () => measure() });
   const [edges, setEdges] = useState({ top: false, bottom: false });
-  const measure = useCallback(() => {
-    const el = follow.ref.current;
+  function measure() {
+    const el = follow.scroller.ref.current;
     if (!el) return;
     const top = el.scrollTop > 2;
     const bottom = el.scrollHeight - el.scrollTop - el.clientHeight > 2;
     setEdges((e) => (e.top === top && e.bottom === bottom ? e : { top, bottom }));
-  }, [follow.ref]);
-  useLayoutEffect(measure, [parts, measure]);
+  }
+  useLayoutEffect(measure, [parts]);
 
   return (
     <>
-      <div
-        ref={follow.ref}
-        className={`steps-scroll ${edges.top ? "fade-top" : ""} ${edges.bottom ? "fade-bottom" : ""}`}
-        onScroll={() => (follow.onScroll(), measure())}
-        onWheel={follow.onUserScroll}
-        onTouchStart={follow.onUserScroll}
-      >
-        <ol className="steps">
+      <div {...follow.scroller} className={`steps-scroll ${edges.top ? "fade-top" : ""} ${edges.bottom ? "fade-bottom" : ""}`}>
+        <ol className="steps" ref={follow.content}>
           {parts.map((p, i) => (p.type === "reasoning" ? <ReasoningStep key={i} p={p} /> : <ToolStep key={p.id} p={p} />))}
         </ol>
       </div>

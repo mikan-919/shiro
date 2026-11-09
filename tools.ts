@@ -86,8 +86,12 @@ export function describe(name: string, a: Args): ToolView {
   return { ...(tool?.view(a) ?? { label: name, icon: "terminal", target: "" }), request: tool?.command?.(a) };
 }
 
+const ERROR = "error: ";
+/** What the model reads when a call fails. summarize() reads the message back from the same prefix. */
+export const errorOutput = (message: string) => ERROR + message;
+
 export function summarize(name: string, a: Args, status: ToolStatus, output?: string): string | undefined {
-  if (status === "error") return firstLine((output ?? "").replace(/^error:\s*/, ""));
+  if (status === "error") return firstLine(output?.startsWith(ERROR) ? output.slice(ERROR.length) : (output ?? ""));
   return ALL.find((t) => t.def.name === name)?.summary?.(a, status === "done" ? output : undefined);
 }
 

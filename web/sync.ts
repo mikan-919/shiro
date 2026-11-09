@@ -1,11 +1,11 @@
 // The browser half of the server protocol: REST calls, and the WebSocket event stream kept in step with
 // the conversation on screen.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apply, type Account, type ConvMeta, type ConvView, type Message, type Push } from "../shared";
+import { apply, type Account, type ConvView, type Message, type Push, type Settings } from "../shared";
+export type { Settings };
 
 export type ServerState = { account: Account | null; cwd: string; defaultModel: string; jev: boolean };
 export type Conversation = { meta: ConvView; messages: Message[] };
-export type Settings = Pick<ConvMeta, "model" | "effort" | "autoApprove">;
 
 async function api<T = unknown>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await fetch(path, {

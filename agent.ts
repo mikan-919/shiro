@@ -2,11 +2,10 @@
 import type { ResponseFunctionToolCall, ResponseInputItem } from "openai/resources/responses/responses";
 import * as store from "./store";
 import { respond } from "./codex";
-import { available, describe, parseArgs, summarize, usable } from "./tools";
+import { available, describe, errorOutput, parseArgs, summarize, usable } from "./tools";
 import { jevEnabled, judge } from "./approve";
-import { apply, assistantText, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type ToolPart } from "./shared";
+import { apply, assistantText, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type Settings, type ToolPart } from "./shared";
 
-type Settings = Pick<ConvMeta, "model" | "effort" | "autoApprove">;
 type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void> };
 
 /** Fills in the view of a tool call stored before calls carried one. */
@@ -50,14 +49,15 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
     return c;
   }
 
-  async function runTurn(c: store.Conv, text: string, images: string[]) {
+  /** `rewound`: the turn replaces an earlier one (edit, regenerate), so the conversation already has its title. */
+  async function runTurn(c: store.Conv, text: string, images: string[], rewound: boolean) {
     const turn: Turn = { ctl: new AbortController(), approvals: new Map() };
     const { signal } = turn.ctl;
     turns.set(c.meta.id, turn);
     // Stopping while a call waits for approval counts as a denial; the next request then sees the abort.
     signal.addEventListener("abort", () => turn.approvals.forEach((resolve) => resolve(false)));
     const itemIndex = c.items.length;
-    if (!c.messages.length) c.meta.title = text.replace(/\s+/g, " ").trim().slice(0, 40) || "画像";
+    if (!c.messages.length && !rewound) c.meta.title = text.replace(/\s+/g, " ").trim().slice(0, 40) || "画像";
     emit(c, { t: "user", msg: { id: crypto.randomUUID(), role: "user", text, images, itemIndex } });
     c.items.push(
       images.length
@@ -101,7 +101,7 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
         return output;
       } catch (e) {
         if (signal.aborted) throw e;
-        const output = `error: ${(e as Error).message}`;
+        const output = errorOutput((e as Error).message);
         emit(c, { t: "tool_status", id, status: "error", output, summary: summarize(name, a, "error", output) });
         return output;
       }
@@ -165,6 +165,7 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
 
     remove(id: string) {
       turns.get(id)?.ctl.abort();
+      seqs.delete(id);
       store.remove(id);
       publish({ type: "deleted", id });
     },
@@ -181,7 +182,7 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
         c.items.length = m.itemIndex;
         emit(c, { t: "truncate", at });
       }
-      void runTurn(c, text, images);
+      void runTurn(c, text, images, from !== undefined);
       return "ok";
     },
 

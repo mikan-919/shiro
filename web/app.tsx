@@ -141,6 +141,7 @@ function App() {
         {showThread ? (
           <>
             <Thread
+              key={conv.meta.id}
               conv={conv}
               known={live.known}
               onApprove={live.approve}

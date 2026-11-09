@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { homedir } from "node:os";
 import type { ResponseInputItem } from "openai/resources/responses/responses";
-import type { ConvMeta, Effort, Message } from "./shared";
+import type { ConvMeta, Effort, Message, Settings } from "./shared";
 
 /** messages is what the UI shows; items is the model's history, which can differ (encrypted reasoning, tool calls). */
 export type Conv = { meta: ConvMeta; messages: Message[]; items: ResponseInputItem[] };
@@ -44,7 +44,7 @@ export function get(id: string): Conv | undefined {
   return conv;
 }
 
-export function create(m: Pick<ConvMeta, "model" | "effort" | "autoApprove">): Conv {
+export function create(m: Settings): Conv {
   const now = Date.now();
   const conv: Conv = { meta: { id: crypto.randomUUID(), title: "新しい会話", ...m, createdAt: now, updatedAt: now }, messages: [], items: [] };
   cache.set(conv.meta.id, conv);
