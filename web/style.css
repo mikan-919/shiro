@@ -23,6 +23,8 @@
   --mincho: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
   --mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   --column: 46rem;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   color-scheme: light;
 }
 
@@ -120,7 +122,7 @@ kbd {
   background: var(--raised);
   font-size: 14px;
   font-weight: 500;
-  transition: background-color 0.12s, border-color 0.12s;
+  transition: background-color 0.12s, border-color 0.12s, transform 160ms var(--ease-out);
 }
 .btn:hover:not(:disabled) { border-color: var(--muted); }
 .btn:disabled { opacity: 0.45; }
@@ -159,6 +161,7 @@ kbd {
 }
 .side-open .sidebar { display: flex; }
 .scrim { display: none; }
+.btn:not(:disabled):active, .chip:active, .new-chat:active { transform: scale(0.97); }
 
 @media (max-width: 899px) {
   .sidebar {
@@ -168,11 +171,13 @@ kbd {
     width: min(86vw, 304px);
     z-index: 40;
     transform: translateX(-100%);
-    transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: transform 240ms var(--ease-drawer);
     box-shadow: var(--shadow);
   }
   .side-open .sidebar { transform: none; }
-  .side-open .scrim { display: block; position: fixed; inset: 0; background: var(--scrim); z-index: 30; }
+  /* The scrim fades with the drawer instead of popping in and vanishing ahead of it. */
+  .scrim { display: block; position: fixed; inset: 0; background: var(--scrim); z-index: 30; opacity: 0; pointer-events: none; transition: opacity 240ms var(--ease-drawer); }
+  .side-open .scrim { opacity: 1; pointer-events: auto; }
   .new-chat kbd, .search kbd { display: none; }
 }
 
@@ -328,9 +333,10 @@ kbd {
   border-radius: 14px;
   box-shadow: var(--shadow);
   padding: 6px;
-  animation: pop 0.12s ease-out;
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
 }
-@keyframes pop { from { opacity: 0; transform: translateY(4px); } }
+/* Popovers grow out of the button that opened them. */
+@starting-style { .popover { opacity: 0; transform: scale(0.97); } }
 .pop-item {
   display: flex;
   align-items: center;
@@ -347,7 +353,7 @@ kbd {
 .pop-item.danger { color: var(--rust); }
 .pop-sep { height: 1px; background: var(--line); margin: 6px 4px; }
 .pop-label { margin: 4px 10px 6px; font-size: 12px; color: var(--faint); }
-.menu-pop { top: calc(100% + 4px); right: 0; min-width: 160px; }
+.menu-pop { top: calc(100% + 4px); right: 0; min-width: 160px; transform-origin: top right; }
 
 .picker { position: relative; }
 .picker-btn {
@@ -363,7 +369,9 @@ kbd {
 }
 .picker-btn:hover { background: var(--surface); color: var(--text); }
 .picker-effort { color: var(--faint); font-weight: 400; }
-.picker-pop { bottom: calc(100% + 8px); right: 0; width: 272px; }
+.picker-pop { right: 0; width: 272px; overflow-y: auto; }
+.picker-pop.up { bottom: calc(100% + 8px); transform-origin: bottom right; }
+.picker-pop.down { top: calc(100% + 8px); transform-origin: top right; }
 @media (max-width: 480px) { .picker-effort { display: none; } }
 
 .segmented { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 2px; margin: 0 4px 4px; background: var(--surface); border-radius: 10px; }
@@ -386,9 +394,12 @@ kbd {
   fill: none;
   stroke: var(--text);
   stroke-linecap: round;
+}
+/* First appearance only: the colony grows outward. Rare, so it may take its time. */
+.ring.grow path {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: hypha 2.6s cubic-bezier(0.25, 0.7, 0.3, 1) forwards;
+  animation: hypha 2.6s var(--ease-out) forwards;
 }
 @keyframes hypha { to { stroke-dashoffset: 0; } }
 
@@ -407,7 +418,7 @@ kbd {
   border: 1px solid var(--line);
   font-size: 13.5px;
   color: var(--muted);
-  transition: border-color 0.12s, color 0.12s;
+  transition: border-color 0.12s, color 0.12s, transform 160ms var(--ease-out);
 }
 .chip:hover { border-color: var(--muted); color: var(--text); }
 
@@ -452,10 +463,10 @@ kbd {
   background: var(--accent-bg);
   color: var(--accent-fg);
   margin-left: 4px;
-  transition: opacity 0.12s, transform 0.12s;
+  transition: opacity 120ms ease, transform 160ms var(--ease-out);
 }
 .send:disabled { opacity: 0.22; }
-.send:not(:disabled):active { transform: scale(0.94); }
+.send:not(:disabled):active { transform: scale(0.97); }
 
 .attachments { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px -6px; }
 .attach { position: relative; width: 64px; height: 64px; }
@@ -584,7 +595,7 @@ kbd {
 
 /* ─── steps: one thread through reasoning and tool calls ───────────── */
 
-.steps { list-style: none; margin: 4px 0 14px; padding: 0; position: relative; }
+.steps { list-style: none; margin: 0; padding: 0; position: relative; }
 .steps::before {
   content: "";
   position: absolute;
@@ -626,7 +637,7 @@ kbd {
 .step-target.mono { font: 13px/1.4 var(--mono); }
 .step-status { flex: none; display: flex; align-items: center; }
 .step-status .ok { color: var(--pine); }
-.step-caret { flex: none; color: var(--faint); transition: transform 0.15s; }
+.step-caret { flex: none; color: var(--faint); transition: transform 200ms var(--ease-out); }
 .step-caret.open { transform: rotate(180deg); }
 .step-body { margin: 2px 0 10px 33px; }
 .step-body pre { max-height: 320px; }
@@ -646,7 +657,8 @@ kbd {
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--text) 35%, transparent);
   background: var(--raised);
-  animation: pop 0.16s ease-out;
+  transform-origin: top left;
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
 }
 .approve p { margin: 0 0 8px; font-weight: 500; font-size: 14.5px; }
 .approve pre { margin: 0 0 12px; max-height: 200px; }
@@ -746,8 +758,11 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
   color: var(--accent-fg);
   font-size: 14px;
   box-shadow: var(--shadow);
-  animation: pop 0.16s ease-out;
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
 }
+/* Rises from the bottom edge and leaves the same way. */
+.toast.leaving { opacity: 0; transform: translateY(8px); }
+@starting-style { .toast { opacity: 0; transform: translateY(8px); } }
 
 .drop {
   position: fixed;
@@ -781,8 +796,13 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
 .lightbox-close:hover:not(:disabled) { background: rgb(255 255 255 / 0.12); color: #fff; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
-  .ring path { stroke-dashoffset: 0; }
+  /* Fewer, gentler: drop movement, keep fades, and keep every "working" indicator alive as a pulse. */
+  .ring.grow path { animation: none; stroke-dashoffset: 0; }
+  .spin, .step.is-live .step-node .icon { animation: breathe 1.6s ease-in-out infinite; }
+  .tip span { animation: breathe 1.6s ease-in-out infinite; transform: none; }
+  .sidebar { transition: none !important; }
+  .popover, .approve, .toast, .toast.leaving, .to-latest, .step-body, .msg.is-new, .msg.is-new .step, .lightbox img,
+  .send:not(:disabled):active, .btn:not(:disabled):active, .chip:active, .new-chat:active { transform: none !important; }
 }
 
 /* ─── automatic approval (TypeSafe Jev) ────────────────────────────── */
@@ -843,3 +863,48 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
 .search-results ol { padding-left: 1.4em; margin: 0; }
 .search-results li { margin: 0 0 10px; }
 .search-results blockquote { margin: 4px 0 0; color: var(--faint); border-left-color: var(--line); }
+
+/* ─── motion ───────────────────────────────────────────────────────── */
+
+/* The chain of reasoning and tool calls keeps a fixed height and scrolls inside; app.tsx glides it to
+   the newest step. Fades at the edges show there is more above or below. */
+.steps-scroll {
+  --fade-top: 0px;
+  --fade-bottom: 0px;
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-anchor: none; /* the glide owns the scroll position; anchoring would fight it */
+  margin: 4px 0 14px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
+}
+.steps-scroll.fade-top { --fade-top: 28px; }
+.steps-scroll.fade-bottom { --fade-bottom: 28px; }
+
+/* Messages and steps that arrive while you watch rise into place; history loads still. */
+.msg.is-new, .msg.is-new .step {
+  transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out);
+}
+@starting-style {
+  .msg.is-new { opacity: 0; transform: translateY(8px); }
+  .msg.is-new .step { opacity: 0; transform: translateY(4px); }
+}
+
+/* Opening a step slides its details down from the row that was clicked. Closing is instant. */
+.step-body { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+@starting-style { .step-body { opacity: 0; transform: translateY(-4px); } }
+
+@starting-style { .approve { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+
+.to-latest { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+@starting-style { .to-latest { opacity: 0; transform: translateY(6px); } }
+
+.drop { transition: opacity 150ms var(--ease-out); }
+@starting-style { .drop { opacity: 0; } }
+
+.lightbox { transition: opacity 200ms var(--ease-out); }
+.lightbox img { transition: transform 200ms var(--ease-out); }
+@starting-style {
+  .lightbox { opacity: 0; }
+  .lightbox img { transform: scale(0.96); }
+}

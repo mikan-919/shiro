@@ -95,6 +95,74 @@ async function toDataUrl(file: File): Promise<string> {
 
 const imageFiles = (list: FileList | File[] | null | undefined) => [...(list ?? [])].filter((f) => f.type.startsWith("image/"));
 
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Keeps a scroll container pinned to its bottom while content grows. Instead of jumping, it glides with
+ * frame-rate independent linear interpolation: each frame closes 1 - e^(-dt/tau) of the remaining distance,
+ * reading the latest target every frame, so new content during a glide just extends it.
+ * A wheel or touch scroll by the user stops the glide; scrolling back near the bottom pins it again.
+ */
+function useFollowBottom<T extends HTMLElement>(dep: unknown, { near = 24, tau = 100, resetKey }: { near?: number; tau?: number; resetKey?: unknown } = {}) {
+  const ref = useRef<T>(null);
+  const stick = useRef(true);
+  const pos = useRef(0);
+  const raf = useRef(0);
+  const [away, setAway] = useState(false);
+
+  const stop = useCallback(() => {
+    cancelAnimationFrame(raf.current);
+    raf.current = 0;
+  }, []);
+
+  const glide = useCallback(() => {
+    const el = ref.current;
+    if (!el || raf.current) return;
+    if (reducedMotion()) return void (el.scrollTop = el.scrollHeight);
+    pos.current = el.scrollTop;
+    let last = performance.now();
+    const step = (now: number) => {
+      const target = el.scrollHeight - el.clientHeight;
+      pos.current += (target - pos.current) * (1 - Math.exp(-(now - last) / tau));
+      last = now;
+      if (Math.abs(target - pos.current) < 0.5) {
+        el.scrollTop = target;
+        raf.current = 0;
+        return;
+      }
+      el.scrollTop = pos.current;
+      raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+  }, [tau]);
+
+  // Opening a conversation lands on its end at once; gliding there from the top would be noise.
+  useLayoutEffect(() => {
+    stop();
+    stick.current = true;
+    setAway(false);
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [resetKey, stop]);
+  useLayoutEffect(() => {
+    if (stick.current) glide();
+  }, [dep, glide]);
+  useEffect(() => stop, [stop]);
+
+  const onScroll = () => {
+    const el = ref.current;
+    if (!el || raf.current) return; // our own frames
+    const isNear = el.scrollHeight - el.scrollTop - el.clientHeight < near;
+    stick.current = isNear;
+    setAway(!isNear);
+  };
+  const toBottom = () => {
+    stick.current = true;
+    setAway(false);
+    glide();
+  };
+  return { ref, away, onScroll, onUserScroll: stop, toBottom };
+}
+
 // ─── icons ────────────────────────────────────────────────────────────────
 
 const ICONS: Record<string, ReactNode> = {
@@ -208,10 +276,15 @@ function useRingPaths() {
   }, []);
 }
 
+// The ring grows once per page load. New chats (often opened with Ctrl+Shift+O) show it already grown.
+let ringGrown = false;
+
 function Ring() {
   const paths = useRingPaths();
+  const [grow] = useState(() => !ringGrown);
+  useEffect(() => void (ringGrown = true), []);
   return (
-    <svg className="ring" viewBox="0 0 280 280" aria-hidden="true">
+    <svg className={`ring ${grow ? "grow" : ""}`} viewBox="0 0 280 280" aria-hidden="true">
       {paths.map((p, i) => (
         <path key={i} d={p.d} pathLength={1} strokeWidth={p.w} style={{ opacity: Math.max(p.o, 0.15), animationDelay: `${p.delay}s` }} />
       ))}
@@ -386,7 +459,47 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
 
 // ─── messages ─────────────────────────────────────────────────────────────
 
-function UserBubble({ m, busy, onEdit, onImage }: { m: UserMessage; busy: boolean; onEdit: (text: string) => void; onImage: (src: string) => void }) {
+/**
+ * Reasoning and tool calls in one bounded, scrollable thread. New steps arrive at the bottom and the list
+ * glides after them, so a long run of tool calls stays a fixed height instead of pushing the answer away.
+ */
+function StepChain({ parts, onApprove }: { parts: (ReasoningPart | ToolPart)[]; onApprove: (tool: string, ok: boolean) => void }) {
+  const follow = useFollowBottom<HTMLDivElement>(parts, { tau: 80 });
+  const [edges, setEdges] = useState({ top: false, bottom: false });
+  const measure = useCallback(() => {
+    const el = follow.ref.current;
+    if (!el) return;
+    const top = el.scrollTop > 2;
+    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight > 2;
+    setEdges((e) => (e.top === top && e.bottom === bottom ? e : { top, bottom }));
+  }, [follow.ref]);
+  useLayoutEffect(measure, [parts, measure]);
+
+  // A command waiting for approval must be on screen, even if the user had scrolled the chain up.
+  const awaiting = parts.some((p) => p.type === "tool" && p.status === "awaiting");
+  useEffect(() => {
+    if (awaiting) follow.toBottom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [awaiting]);
+
+  return (
+    <div
+      ref={follow.ref}
+      className={`steps-scroll ${edges.top ? "fade-top" : ""} ${edges.bottom ? "fade-bottom" : ""}`}
+      onScroll={() => (follow.onScroll(), measure())}
+      onWheel={follow.onUserScroll}
+      onTouchStart={follow.onUserScroll}
+    >
+      <ol className="steps">
+        {parts.map((p, i) =>
+          p.type === "reasoning" ? <ReasoningStep key={i} p={p} /> : <ToolStep key={p.id} p={p} onApprove={(ok) => onApprove(p.id, ok)} />,
+        )}
+      </ol>
+    </div>
+  );
+}
+
+function UserBubble({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh: boolean; busy: boolean; onEdit: (text: string) => void; onImage: (src: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.text);
   if (editing)
@@ -400,7 +513,7 @@ function UserBubble({ m, busy, onEdit, onImage }: { m: UserMessage; busy: boolea
       </div>
     );
   return (
-    <div className="msg user">
+    <div className={`msg user ${fresh ? "is-new" : ""}`}>
       {m.images.length > 0 && (
         <div className="user-images">
           {m.images.map((src, i) => (
@@ -433,8 +546,8 @@ function blocks(parts: Part[]): Block[] {
   return out;
 }
 
-function AssistantBody({ m, models, isLast, busy, onApprove, onRegenerate }: {
-  m: AssistantMessage; models: ServerState["models"]; isLast: boolean; busy: boolean;
+function AssistantBody({ m, fresh, models, isLast, busy, onApprove, onRegenerate }: {
+  m: AssistantMessage; fresh: boolean; models: ServerState["models"]; isLast: boolean; busy: boolean;
   onApprove: (tool: string, ok: boolean) => void; onRegenerate: () => void;
 }) {
   const bs = blocks(m.parts);
@@ -444,16 +557,12 @@ function AssistantBody({ m, models, isLast, busy, onApprove, onRegenerate }: {
     (!tail || (tail.type === "reasoning" && tail.done) || (tail.type === "tool" && tail.status !== "running" && tail.status !== "awaiting"));
   const text = m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n\n");
   return (
-    <div className={`msg assistant ${m.status === "streaming" ? "is-streaming" : ""}`}>
+    <div className={`msg assistant ${m.status === "streaming" ? "is-streaming" : ""} ${fresh ? "is-new" : ""}`}>
       {bs.map((b) =>
         b.kind === "text" ? (
           <div key={b.key} className="prose"><Md text={b.text} /></div>
         ) : (
-          <ol key={b.key} className="steps">
-            {b.parts.map((p, i) =>
-              p.type === "reasoning" ? <ReasoningStep key={i} p={p} /> : <ToolStep key={p.id} p={p} onApprove={(ok) => onApprove(p.id, ok)} />,
-            )}
-          </ol>
+          <StepChain key={b.key} parts={b.parts} onApprove={onApprove} />
         ),
       )}
       {waiting && <div className="tip" aria-label="応答を待っています"><span /></div>}
@@ -479,51 +588,28 @@ function AssistantBody({ m, models, isLast, busy, onApprove, onRegenerate }: {
   );
 }
 
-function Thread({ conv, models, onApprove, onEdit, onRegenerate, onImage }: {
-  conv: { meta: ConvMeta; messages: Message[] }; models: ServerState["models"];
+function Thread({ conv, known, models, onApprove, onEdit, onRegenerate, onImage }: {
+  conv: { meta: ConvMeta; messages: Message[] }; known: Set<string>; models: ServerState["models"];
   onApprove: (tool: string, ok: boolean) => void; onEdit: (from: UserMessage, text: string) => void;
   onRegenerate: () => void; onImage: (src: string) => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-  const [away, setAway] = useState(false);
+  const follow = useFollowBottom<HTMLDivElement>(conv, { near: 96, resetKey: conv.meta.id });
   const busy = conv.meta.running;
   const lastAssistant = conv.messages.findLastIndex((m) => m.role === "assistant");
 
-  useLayoutEffect(() => {
-    stick.current = true;
-  }, [conv.meta.id]);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [conv]);
-
   return (
-    <div
-      className="thread"
-      ref={ref}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        const near = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
-        stick.current = near;
-        setAway(!near);
-      }}
-    >
+    <div className="thread" ref={follow.ref} onScroll={follow.onScroll} onWheel={follow.onUserScroll} onTouchStart={follow.onUserScroll}>
       <div className="column">
         {conv.messages.map((m, i) =>
           m.role === "user" ? (
-            <UserBubble key={m.id} m={m} busy={busy} onEdit={(t) => onEdit(m, t)} onImage={onImage} />
+            <UserBubble key={m.id} m={m} fresh={!known.has(m.id)} busy={busy} onEdit={(t) => onEdit(m, t)} onImage={onImage} />
           ) : (
-            <AssistantBody key={m.id} m={m} models={models} isLast={i === lastAssistant} busy={busy} onApprove={onApprove} onRegenerate={onRegenerate} />
+            <AssistantBody key={m.id} m={m} fresh={!known.has(m.id)} models={models} isLast={i === lastAssistant} busy={busy} onApprove={onApprove} onRegenerate={onRegenerate} />
           ),
         )}
       </div>
-      {away && (
-        <button
-          type="button"
-          className="to-latest"
-          onClick={() => ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" })}
-        >
+      {follow.away && (
+        <button type="button" className="to-latest" onClick={follow.toBottom}>
           <Icon name="down" size={16} />
           最新へ
         </button>
@@ -542,16 +628,26 @@ function ModelPicker({ models, efforts, model, effort, jev, autoApprove, onModel
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss(open, close);
   const auto = jev && autoApprove;
+  // Open toward the side with more room, and scroll inside if even that is too short.
+  const [place, setPlace] = useState<{ up: boolean; max: number }>({ up: true, max: 480 });
+  const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    // The empty screen scrolls, so it clips; elsewhere the viewport is the limit.
+    const box = e.currentTarget.closest(".empty")?.getBoundingClientRect() ?? { top: 0, bottom: innerHeight };
+    const above = r.top - box.top, below = box.bottom - r.bottom;
+    setPlace({ up: above >= below, max: Math.max(above, below) - 16 });
+    setOpen(!open);
+  };
   return (
     <div className="picker" ref={ref}>
-      <button type="button" className="picker-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">
+      <button type="button" className="picker-btn" onClick={toggle} aria-expanded={open} aria-haspopup="dialog">
         {auto && <span className="picker-auto" title="コマンドの自動承認が有効です"><Icon name="shield" size={14} /></span>}
         <span>{models.find((m) => m.id === model)?.name ?? model}</span>
         <span className="picker-effort">{efforts.find((e) => e.id === effort)?.name}</span>
         <Icon name="chevron" size={14} />
       </button>
       {open && (
-        <div className="popover picker-pop" role="dialog" aria-label="モデルの選択">
+        <div className={`popover picker-pop ${place.up ? "up" : "down"}`} style={{ maxHeight: place.max }} role="dialog" aria-label="モデルの選択">
           <div role="radiogroup" aria-label="モデル">
             {models.map((m) => (
               <button type="button" role="radio" aria-checked={m.id === model} key={m.id} className="pop-item" onClick={() => onModel(m.id)}>
@@ -850,13 +946,14 @@ function App() {
   const [online, setOnline] = useState(true);
   const [sidebar, setSidebar] = useState(() => matchMedia("(min-width: 900px)").matches);
   const [query, setQuery] = useState("");
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; leaving: boolean } | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [prefs, setPrefs] = useStored<{ model?: string; effort: Effort; autoApprove?: boolean }>("shiro.new", { effort: "medium" });
 
   const seq = useRef(0);
+  const known = useRef<Set<string>>(new Set()); // messages present when the conversation was opened; only later ones animate in
   const buffer = useRef<Push[] | null>(null);
   const cur = useRef(currentId);
   const composer = useRef<ComposerHandle>(null);
@@ -864,9 +961,13 @@ function App() {
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const say = useCallback((msg: string) => {
-    setToast(msg);
+    setToast({ msg, leaving: false });
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4000);
+    // Leave the way it came in, then unmount once the 200ms exit transition has played.
+    toastTimer.current = setTimeout(() => {
+      setToast((t) => t && { ...t, leaving: true });
+      toastTimer.current = setTimeout(() => setToast(null), 200);
+    }, 4000);
   }, []);
 
   const navigate = useCallback((id: string | null) => {
@@ -885,6 +986,7 @@ function App() {
       let { messages, seq: s } = d;
       for (const p of buffer.current ?? []) if (p.type === "ev" && p.conv === id && p.seq > s) ((messages = apply(messages, p.ev)), (s = p.seq));
       seq.current = s;
+      known.current = new Set(messages.map((m) => m.id));
       setConv({ meta: d.meta, messages });
     } catch (e) {
       if (cur.current === id) (say((e as Error).message), navigate(null));
@@ -1000,6 +1102,7 @@ function App() {
       if (!id) {
         const meta = await api<ConvMeta>("/api/conversations", { model, effort, autoApprove });
         seq.current = 0;
+        known.current = new Set();
         setConv({ meta, messages: [] });
         navigate(meta.id);
         id = meta.id;
@@ -1099,6 +1202,7 @@ function App() {
           <>
             <Thread
               conv={conv}
+              known={known.current}
               models={srv?.models ?? []}
               onApprove={(tool, ok) => api(`/api/conversations/${conv.meta.id}/approve`, { tool, ok }).catch((e: Error) => say(e.message))}
               onEdit={(m, t) => void send(t, m.images, m.id)}
@@ -1158,9 +1262,9 @@ function App() {
         </div>
       )}
       {toast && (
-        <div className="toast" role="status">
+        <div className={`toast ${toast.leaving ? "leaving" : ""}`} role="status">
           <Icon name="alert" size={16} />
-          {toast}
+          {toast.msg}
         </div>
       )}
     </div>
