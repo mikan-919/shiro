@@ -408,7 +408,7 @@ function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
 
 function ReasoningStep({ p }: { p: ReasoningPart }) {
   const [open, setOpen] = useState<boolean | null>(null);
-  const isOpen = open ?? !p.done;
+  const isOpen = open ?? true;
   const heading = [...p.text.matchAll(/\*\*(.+?)\*\*/g)].at(-1)?.[1];
   return (
     <li className={`step ${p.done ? "" : "is-live"}`}>
@@ -456,11 +456,41 @@ function SearchQueries({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+/** One line under a collapsed tool step: the gist of its result, so the chain reads without opening anything. */
+function toolPreview(p: ToolPart): string | null {
+  const a = parseArgs(p.args);
+  const out = p.output ?? "";
+  const lines = (s: string) => (s ? s.replace(/\n$/, "").split("\n").length : 0);
+  const firstLine = (s: string) => s.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  if (p.status === "error") return firstLine(out.replace(/^error:\s*/, ""));
+  if (p.status === "denied") return null;
+  // What a write or edit puts in the file is known from its arguments, even before it runs.
+  if (p.name === "write_file") return firstLine(a.content ?? "") || "空のファイル";
+  if (p.name === "edit_file") return `−${lines(a.old_str ?? "")} +${lines(a.new_str ?? "")}  ${firstLine(a.new_str ?? "")}`;
+  if (p.status !== "done") return null;
+  switch (p.name) {
+    case "bash": {
+      const [, code = "0", rest = ""] = /^exit (\S+)\n?([\s\S]*)$/.exec(out) ?? [];
+      const line = firstLine(rest);
+      return code === "0" ? line || "出力なし" : `終了コード ${code}${line ? `: ${line}` : ""}`;
+    }
+    case "read_file":
+      return firstLine(out) || "空のファイル";
+    case "web_search": {
+      const titles = [...out.matchAll(/^\d+\. \[(.+?)\]/gm)].map((m) => m[1]);
+      if (!titles.length) return "結果なし";
+      return titles.length > 1 ? `${titles[0]} ほか ${titles.length - 1} 件` : titles[0]!;
+    }
+  }
+  return firstLine(out) || null;
+}
+
 function ToolStep({ p }: { p: ToolPart }) {
   const [open, setOpen] = useState(false);
   const v = TOOL_VIEW[p.name] ?? { icon: "terminal", verb: p.name, key: "" };
   const a = parseArgs(p.args);
   const target = a[v.key] ?? "";
+  const preview = toolPreview(p);
   const status: Record<ToolPart["status"], ReactNode> = {
     judging: <span className="badge judging"><span className="spin" />自動判定中</span>,
     running: <span className="spin" aria-label="実行中" />,
@@ -490,6 +520,7 @@ function ToolStep({ p }: { p: ToolPart }) {
         <span className="step-status">{status[p.status]}</span>
         <span className={`step-caret ${open ? "open" : ""}`}><Icon name="chevron" size={14} /></span>
       </button>
+      {preview && !open && <p className={`step-preview ${p.status === "error" ? "bad" : ""}`}>{preview}</p>}
       <Collapse open={open}>
         <div className="step-body">
           {p.judge && p.status !== "awaiting" && (

@@ -963,3 +963,14 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
   .empty > *, .send .icon, .attach,
   .send:not(:disabled):active, .btn:not(:disabled):active, .chip:active, .new-chat:active { transform: none !important; }
 }
+
+/* One line of the result under a collapsed tool step, aligned with the step's label. */
+.step-preview {
+  margin: -6px 0 4px 33px;
+  font: 12.5px/1.5 var(--mono);
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.step-preview.bad { color: var(--rust); }
