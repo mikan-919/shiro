@@ -19,7 +19,7 @@ export type Effort = (typeof EFFORTS)[number]["id"];
 export type ToolStatus = "judging" | "running" | "awaiting" | "done" | "denied" | "error";
 
 /** Outcome of automatic approval. by: "rule" = static list, "jev" = TypeSafe Jev, "error" = Jev unavailable. */
-export type Judge = { ok: boolean; by: "rule" | "jev" | "error"; reason?: string; reversible?: number; servesTask?: number };
+export type Judge = { ok: boolean; by: "rule" | "jev" | "error"; reason?: string; readOnly?: number; reversible?: number; servesTask?: number };
 
 export type Part =
   | { type: "reasoning"; text: string; done: boolean }

@@ -1,12 +1,15 @@
 // Automatic approval of shell commands with TypeSafe AI's Jev (https://docs.typesafe.ai/api).
 // A static rule list runs first; anything it flags always goes to the user. The rest is asked to Jev,
-// and runs without a prompt only when every answer clears THRESHOLD. Any failure falls back to the user.
+// and runs without a prompt when it is a pure read, or when it is both undoable and on task. Any failure falls back to the user.
 
 import type { Judge } from "./shared";
 
 const API = process.env.SHIRO_JEV_URL ?? "https://api.typesafe.ai/v1/systemone";
 const MODEL = process.env.SHIRO_JEV_MODEL ?? "jev-latest";
 const THRESHOLD = 0.9;
+// Measured against jev-1.14: pure reads scored 0.87-0.98 (git status is the low one: it may refresh the index),
+// state-changing commands 0.06 or less. 0.8 keeps git status in without coming near the writes.
+const READ_THRESHOLD = 0.8;
 
 export const jevEnabled = () => !!process.env.TYPESAFE_API_KEY;
 
@@ -54,6 +57,18 @@ export function neverAuto(command: string): string | null {
 }
 
 const QUESTIONS = {
+  // Inspection is a reasonable step toward almost any task, and Jev judges "serves the task" narrowly
+  // (a terse "続けて" or an indirect step scores low). So a pure read is approved on this question alone.
+  read_only: {
+    type: "noul",
+    instructions:
+      "Every command in `commands` only reads or lists information inside `project` (file contents, directory listings, " +
+      "git status, history or diffs, search results) and prints it. It creates, modifies or deletes nothing and sends nothing over the network.",
+    criteria: {
+      true: "Pure inspection: the only effect is printed output.",
+      false: "Anything is written, changed, deleted, installed, built, executed as a test, or sent.",
+    },
+  },
   reversible: {
     type: "noul",
     instructions:
@@ -78,14 +93,17 @@ export async function judge(command: string, project: string, task: string, sign
     });
     if (!res.ok) return { ok: false, by: "error", reason: `Jev が応答しませんでした（${res.status}）` };
     const j = (await res.json()) as { answers?: Record<string, { noul?: unknown }> };
+    const readOnly = j.answers?.read_only?.noul;
     const reversible = j.answers?.reversible?.noul;
     const serves = j.answers?.serves_task?.noul;
     const valid = (v: unknown): v is number => typeof v === "number" && v >= 0 && v <= 1;
-    if (!valid(reversible) || !valid(serves)) return { ok: false, by: "error", reason: "Jev の応答を読み取れませんでした" };
-    const ok = reversible >= THRESHOLD && serves >= THRESHOLD;
+    if (!valid(readOnly) || !valid(reversible) || !valid(serves)) return { ok: false, by: "error", reason: "Jev の応答を読み取れませんでした" };
+    // A pure read passes on its own; anything that changes state must be both undoable and on task.
+    const ok = readOnly >= READ_THRESHOLD || (reversible >= THRESHOLD && serves >= THRESHOLD);
     return {
       ok,
       by: "jev",
+      readOnly,
       reversible,
       servesTask: serves,
       reason: ok ? undefined : reversible < THRESHOLD ? "取り消せる操作だと判定できませんでした" : "依頼に沿った操作だと判定できませんでした",

@@ -445,7 +445,7 @@ function Diff({ before, after }: { before: string; after: string }) {
 }
 
 const pct = (v?: number) => (v === undefined ? "-" : `${Math.round(v * 100)}%`);
-const judgeDetail = (j: Judge) => `取り消せる操作 ${pct(j.reversible)}、依頼に沿う ${pct(j.servesTask)}`;
+const judgeDetail = (j: Judge) => `読み取りのみ ${pct(j.readOnly)}、取り消せる操作 ${pct(j.reversible)}、依頼に沿う ${pct(j.servesTask)}`;
 
 function SearchQueries({ args }: { args: Record<string, unknown> }) {
   const qs = Array.isArray(args.search_queries) ? args.search_queries.map(String) : [];
