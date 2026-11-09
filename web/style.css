@@ -834,3 +834,12 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
 .switch:checked { background: var(--pine); }
 .switch:checked::after { transform: translateX(15px); }
 .switch:disabled { opacity: 0.4; cursor: default; }
+
+/* ─── web search (Parallel) ────────────────────────────────────────── */
+
+.queries { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; }
+.queries li { font-size: 12.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+.search-results { font-size: 13.5px; line-height: 1.7; max-height: 420px; overflow-y: auto; padding-right: 4px; }
+.search-results ol { padding-left: 1.4em; margin: 0; }
+.search-results li { margin: 0 0 10px; }
+.search-results blockquote { margin: 4px 0 0; color: var(--faint); border-left-color: var(--line); }

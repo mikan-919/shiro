@@ -52,3 +52,15 @@ test("neverAuto keeps risky commands for the user and lets plain ones through to
   for (const cmd of ["ls -la", "git status", "bun test 2>&1", "cat src/a.ts | head -20", "git diff > /dev/null", "./node_modules/.bin/tsc --noEmit", "grep -rn TODO ."])
     expect([cmd, neverAuto(cmd)]).toEqual([cmd, null]);
 });
+
+test("formatResults links titles and quotes excerpts", async () => {
+  const { formatResults } = await import("./search");
+  expect(formatResults([])).toBe("No results.");
+  const md = formatResults([
+    { url: "https://a.example/x", title: "A [draft]", publish_date: "2026-11-01", excerpts: ["one", "two\nlines"] },
+    { url: "https://b.example", title: null, excerpts: [] },
+  ]);
+  expect(md).toBe(
+    "1. [A draft](https://a.example/x) (2026-11-01)\n   > one\n   > …\n   > two\n   > lines\n\n2. [https://b.example](https://b.example)",
+  );
+});

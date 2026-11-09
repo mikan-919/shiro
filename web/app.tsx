@@ -289,6 +289,7 @@ const TOOL_VIEW: Record<string, { icon: string; verb: string; key: string }> = {
   write_file: { icon: "file", verb: "書き込み", key: "path" },
   edit_file: { icon: "pencil", verb: "編集", key: "path" },
   bash: { icon: "terminal", verb: "コマンド", key: "command" },
+  web_search: { icon: "search", verb: "ウェブ検索", key: "objective" },
 };
 
 function Diff({ before, after }: { before: string; after: string }) {
@@ -302,6 +303,15 @@ function Diff({ before, after }: { before: string; after: string }) {
 
 const pct = (v?: number) => (v === undefined ? "-" : `${Math.round(v * 100)}%`);
 const judgeDetail = (j: Judge) => `取り消せる操作 ${pct(j.reversible)}、依頼に沿う ${pct(j.servesTask)}`;
+
+function SearchQueries({ args }: { args: Record<string, unknown> }) {
+  const qs = Array.isArray(args.search_queries) ? args.search_queries.map(String) : [];
+  return (
+    <ul className="queries" aria-label="検索語">
+      {qs.map((q) => <li key={q}>{q}</li>)}
+    </ul>
+  );
+}
 
 function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => void }) {
   const [open, setOpen] = useState(false);
@@ -319,7 +329,8 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
   const body =
     p.name === "edit_file" ? <Diff before={a.old_str ?? ""} after={a.new_str ?? ""} /> :
     p.name === "write_file" ? <pre>{a.content}</pre> :
-    p.name === "bash" ? <pre className="cmd">{`$ ${a.command ?? ""}`}</pre> : null;
+    p.name === "bash" ? <pre className="cmd">{`$ ${a.command ?? ""}`}</pre> :
+    p.name === "web_search" ? <SearchQueries args={a} /> : null;
 
   return (
     <li className={`step tool-${p.status}`}>
@@ -362,7 +373,11 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
             </p>
           )}
           {body}
-          {p.output !== undefined && <pre className={`out ${p.status === "error" ? "bad" : ""}`}>{p.output}</pre>}
+          {p.output !== undefined && (p.name === "web_search" && p.status === "done" ? (
+            <div className="search-results"><Md text={p.output} /></div>
+          ) : (
+            <pre className={`out ${p.status === "error" ? "bad" : ""}`}>{p.output}</pre>
+          ))}
         </div>
       )}
     </li>

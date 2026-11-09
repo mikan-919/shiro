@@ -1,4 +1,5 @@
 import type { FunctionTool } from "openai/resources/responses/responses";
+import { SEARCH_TOOL, searchEnabled, webSearch } from "./search";
 
 const tool = (name: string, description: string, props: Record<string, string>): FunctionTool => ({
   type: "function",
@@ -13,7 +14,7 @@ const tool = (name: string, description: string, props: Record<string, string>):
   },
 });
 
-export const TOOLS = [
+const BASE = [
   tool("read_file", "Read a text file.", { path: "File path" }),
   tool("write_file", "Create or overwrite a file.", { path: "File path", content: "Full file content" }),
   tool("edit_file", "Replace one exact, unique occurrence of old_str with new_str.", {
@@ -22,17 +23,24 @@ export const TOOLS = [
   tool("bash", "Run a shell command in the current directory. The user approves each call.", { command: "Command" }),
 ];
 
+/** Web search is offered only when a Parallel API key is configured. */
+export const tools = () => (searchEnabled() ? [...BASE, SEARCH_TOOL] : BASE);
+
 // Keeps one huge file or log from filling the context window.
 const LIMIT = 50_000;
 const cap = (s: string) => (s.length > LIMIT ? `${s.slice(0, LIMIT)}\n… (${s.length - LIMIT} chars truncated)` : s);
 
 export async function runTool(
   name: string,
-  a: Record<string, string>,
+  a: Record<string, any>,
   confirm: (command: string) => Promise<boolean>,
   signal?: AbortSignal,
+  model = "",
 ): Promise<string> {
   switch (name) {
+    case "web_search":
+      if (!searchEnabled()) throw new Error("web search is not configured");
+      return webSearch(String(a.objective ?? ""), Array.isArray(a.search_queries) ? a.search_queries.map(String) : [], model, signal);
     case "read_file":
       return cap(await Bun.file(a.path!).text());
     case "write_file":

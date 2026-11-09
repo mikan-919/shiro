@@ -2,7 +2,8 @@ import OpenAI from "openai";
 import type { ResponseFunctionToolCall, ResponseInputItem } from "openai/resources/responses/responses";
 import { account, getCred, hasCred, logout, startLogin } from "./auth";
 import page from "./web/index.html";
-import { TOOLS, runTool } from "./tools";
+import { runTool, tools } from "./tools";
+import { searchEnabled } from "./search";
 import { jevEnabled, judge } from "./approve";
 import * as store from "./store";
 import { apply, assistantText, EFFORTS, MODELS, type ConvMeta, type Effort, type Ev, type Push } from "./shared";
@@ -10,8 +11,9 @@ import { apply, assistantText, EFFORTS, MODELS, type ConvMeta, type Effort, type
 const PORT = Number(process.env.SHIRO_PORT ?? 3000);
 const DEFAULT_MODEL = process.env.SHIRO_MODEL ?? MODELS[0].id;
 const CWD = process.cwd();
-const instructions = `You are shiro, a coding and everyday agent running on the user's own machine in ${CWD}.
-Use the tools to inspect and change files and run commands. Reply in the user's language. Use Markdown. Be concise.`;
+const instructions = () => `You are shiro, a coding and everyday agent running on the user's own machine in ${CWD}.
+Use the tools to inspect and change files and run commands.${searchEnabled() ? " Use web_search for current or external facts, and cite the URLs you used." : ""}
+Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language. Use Markdown. Be concise.`;
 
 type Running = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void> };
 const running = new Map<string, Running>();
@@ -83,7 +85,7 @@ async function runTurn(c: store.Conv, text: string, images: string[]) {
       });
       const stream = await client.responses.create(
         {
-          model: c.meta.model, instructions, input: c.items, tools: TOOLS, tool_choice: "auto", parallel_tool_calls: true,
+          model: c.meta.model, instructions: instructions(), input: c.items, tools: tools(), tool_choice: "auto", parallel_tool_calls: true,
           reasoning: { effort: c.meta.effort, summary: "auto" },
           store: false, stream: true, include: ["reasoning.encrypted_content"], prompt_cache_key: c.meta.id,
         },
@@ -106,7 +108,7 @@ async function runTurn(c: store.Conv, text: string, images: string[]) {
         emit(c, { t: "tool", id: call.call_id, name: call.name, args: call.arguments });
         let output: string;
         try {
-          output = await runTool(call.name, JSON.parse(call.arguments), confirm(call.call_id), r.ctl.signal);
+          output = await runTool(call.name, JSON.parse(call.arguments), confirm(call.call_id), r.ctl.signal, c.meta.model);
           if (output !== "user denied this command") emit(c, { t: "tool_status", id: call.call_id, status: "done", output });
         } catch (e) {
           if (r.ctl.signal.aborted) throw e;
