@@ -97,13 +97,31 @@ const imageFiles = (list: FileList | File[] | null | undefined) => [...(list ?? 
 
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/** Reads an easing token from style.css so JS-driven motion (WAAPI) uses the same curves as CSS. */
+const cssEase = (name: "--ease-out" | "--ease-in-out") => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "ease-out";
+
+/** Keeps an element mounted for `ms` after `open` turns false, so it can play its exit. */
+function usePresence(open: boolean, ms = 120) {
+  const [mounted, setMounted] = useState(open);
+  useEffect(() => {
+    if (open) return void setMounted(true);
+    if (reducedMotion()) return void setMounted(false);
+    const t = setTimeout(() => setMounted(false), ms);
+    return () => clearTimeout(t);
+  }, [open, ms]);
+  return { mounted: open || mounted, leaving: !open && mounted };
+}
+
 /**
  * Keeps a scroll container pinned to its bottom while content grows. Instead of jumping, it glides with
  * frame-rate independent linear interpolation: each frame closes 1 - e^(-dt/tau) of the remaining distance,
  * reading the latest target every frame, so new content during a glide just extends it.
  * A wheel or touch scroll by the user stops the glide; scrolling back near the bottom pins it again.
  */
-function useFollowBottom<T extends HTMLElement>(dep: unknown, { near = 24, tau = 100, resetKey }: { near?: number; tau?: number; resetKey?: unknown } = {}) {
+function useFollowBottom<T extends HTMLElement>(
+  dep: unknown,
+  { near = 24, tau = 100, resetKey, observe = false }: { near?: number; tau?: number; resetKey?: unknown; observe?: boolean } = {},
+) {
   const ref = useRef<T>(null);
   const stick = useRef(true);
   const pos = useRef(0);
@@ -147,6 +165,14 @@ function useFollowBottom<T extends HTMLElement>(dep: unknown, { near = 24, tau =
     if (stick.current) glide();
   }, [dep, glide]);
   useEffect(() => stop, [stop]);
+  // Content can also grow between data updates (text revealed frame by frame, panels opening).
+  useEffect(() => {
+    const content = observe ? ref.current?.firstElementChild : null;
+    if (!content) return;
+    const ro = new ResizeObserver(() => stick.current && glide());
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [observe, glide, resetKey]);
 
   const onScroll = () => {
     const el = ref.current;
@@ -309,6 +335,33 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   );
 }
 
+/**
+ * Streams text at an even pace instead of in network-sized bursts. The revealed length eases toward the
+ * received length (closing 1 - e^(-dt/220ms) of the gap per frame) with a floor of one character per 12ms,
+ * so a large burst never trails far behind. History renders in full at once.
+ */
+function SmoothMd({ text, live }: { text: string; live: boolean }) {
+  const [shown, setShown] = useState(() => (live ? 0 : text.length));
+  const pos = useRef(shown);
+  useEffect(() => {
+    if (reducedMotion()) return void setShown((pos.current = text.length));
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const gap = text.length - pos.current;
+      if (gap <= 0) return;
+      const dt = now - last;
+      last = now;
+      pos.current = Math.min(text.length, pos.current + Math.max(gap * (1 - Math.exp(-dt / 220)), dt / 12));
+      setShown(Math.floor(pos.current));
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [text]);
+  return <Md text={shown >= text.length ? text : text.slice(0, shown)} />;
+}
+
 const MD_COMPONENTS: Components = {
   pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
   a: ({ href, children }) => (
@@ -336,6 +389,23 @@ const Md = memo(function Md({ text }: { text: string }) {
 
 // ─── steps: reasoning and tool calls, joined by one thread ────────────────
 
+/**
+ * Opens and closes by animating grid rows 0fr ↔ 1fr (the one place height may animate: an accordion).
+ * Mounts on open and keeps the last content while closing, then unmounts once the close has played.
+ */
+function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  // A timer, not transitionend: that event never arrives when the transition is cancelled or skipped.
+  const { mounted } = usePresence(open, 220);
+  const last = useRef(children);
+  if (open) last.current = children;
+  if (!mounted) return null;
+  return (
+    <div className={`collapse ${open ? "open" : ""}`}>
+      <div className="collapse-inner">{open ? children : last.current}</div>
+    </div>
+  );
+}
+
 function ReasoningStep({ p }: { p: ReasoningPart }) {
   const [open, setOpen] = useState<boolean | null>(null);
   const isOpen = open ?? !p.done;
@@ -348,11 +418,11 @@ function ReasoningStep({ p }: { p: ReasoningPart }) {
         {!p.done && heading && <span className="step-target">{heading}</span>}
         <span className={`step-caret ${isOpen ? "open" : ""}`}><Icon name="chevron" size={14} /></span>
       </button>
-      {isOpen && (
+      <Collapse open={isOpen}>
         <div className="step-body reasoning">
           <Md text={p.text} />
         </div>
-      )}
+      </Collapse>
     </li>
   );
 }
@@ -420,7 +490,7 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
         <span className="step-status">{status[p.status]}</span>
         <span className={`step-caret ${open ? "open" : ""}`}><Icon name="chevron" size={14} /></span>
       </button>
-      {p.status === "awaiting" && (
+      <Collapse open={p.status === "awaiting"}>
         <div className="approve" role="group" aria-label="コマンドの実行の承認">
           <p>このコマンドを実行しますか？</p>
           {p.judge && !p.judge.ok && (
@@ -435,8 +505,8 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
             <button type="button" className="btn" onClick={() => onApprove(false)}>拒否する</button>
           </div>
         </div>
-      )}
-      {open && (
+      </Collapse>
+      <Collapse open={open}>
         <div className="step-body">
           {p.judge && p.status !== "awaiting" && (
             <p className="judge-line">
@@ -452,7 +522,7 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
             <pre className={`out ${p.status === "error" ? "bad" : ""}`}>{p.output}</pre>
           ))}
         </div>
-      )}
+      </Collapse>
     </li>
   );
 }
@@ -464,7 +534,7 @@ function ToolStep({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) => v
  * glides after them, so a long run of tool calls stays a fixed height instead of pushing the answer away.
  */
 function StepChain({ parts, onApprove }: { parts: (ReasoningPart | ToolPart)[]; onApprove: (tool: string, ok: boolean) => void }) {
-  const follow = useFollowBottom<HTMLDivElement>(parts, { tau: 80 });
+  const follow = useFollowBottom<HTMLDivElement>(parts, { tau: 180 });
   const [edges, setEdges] = useState({ top: false, bottom: false });
   const measure = useCallback(() => {
     const el = follow.ref.current;
@@ -560,7 +630,7 @@ function AssistantBody({ m, fresh, models, isLast, busy, onApprove, onRegenerate
     <div className={`msg assistant ${m.status === "streaming" ? "is-streaming" : ""} ${fresh ? "is-new" : ""}`}>
       {bs.map((b) =>
         b.kind === "text" ? (
-          <div key={b.key} className="prose"><Md text={b.text} /></div>
+          <div key={b.key} className="prose"><SmoothMd text={b.text} live={m.status === "streaming"} /></div>
         ) : (
           <StepChain key={b.key} parts={b.parts} onApprove={onApprove} />
         ),
@@ -593,13 +663,13 @@ function Thread({ conv, known, models, onApprove, onEdit, onRegenerate, onImage 
   onApprove: (tool: string, ok: boolean) => void; onEdit: (from: UserMessage, text: string) => void;
   onRegenerate: () => void; onImage: (src: string) => void;
 }) {
-  const follow = useFollowBottom<HTMLDivElement>(conv, { near: 96, resetKey: conv.meta.id });
+  const follow = useFollowBottom<HTMLDivElement>(conv, { near: 96, tau: 200, resetKey: conv.meta.id, observe: true });
   const busy = conv.meta.running;
   const lastAssistant = conv.messages.findLastIndex((m) => m.role === "assistant");
 
   return (
     <div className="thread" ref={follow.ref} onScroll={follow.onScroll} onWheel={follow.onUserScroll} onTouchStart={follow.onUserScroll}>
-      <div className="column">
+      <div className="column" key={conv.meta.id}>
         {conv.messages.map((m, i) =>
           m.role === "user" ? (
             <UserBubble key={m.id} m={m} fresh={!known.has(m.id)} busy={busy} onEdit={(t) => onEdit(m, t)} onImage={onImage} />
@@ -628,6 +698,7 @@ function ModelPicker({ models, efforts, model, effort, jev, autoApprove, onModel
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss(open, close);
   const auto = jev && autoApprove;
+  const pop = usePresence(open);
   // Open toward the side with more room, and scroll inside if even that is too short.
   const [place, setPlace] = useState<{ up: boolean; max: number }>({ up: true, max: 480 });
   const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -646,8 +717,8 @@ function ModelPicker({ models, efforts, model, effort, jev, autoApprove, onModel
         <span className="picker-effort">{efforts.find((e) => e.id === effort)?.name}</span>
         <Icon name="chevron" size={14} />
       </button>
-      {open && (
-        <div className={`popover picker-pop ${place.up ? "up" : "down"}`} style={{ maxHeight: place.max }} role="dialog" aria-label="モデルの選択">
+      {pop.mounted && (
+        <div className={`popover picker-pop ${place.up ? "up" : "down"} ${pop.leaving ? "leaving" : ""}`} style={{ maxHeight: place.max }} role="dialog" aria-label="モデルの選択">
           <div role="radiogroup" aria-label="モデル">
             {models.map((m) => (
               <button type="button" role="radio" aria-checked={m.id === model} key={m.id} className="pop-item" onClick={() => onModel(m.id)}>
@@ -659,6 +730,7 @@ function ModelPicker({ models, efforts, model, effort, jev, autoApprove, onModel
           <div className="pop-sep" />
           <p className="pop-label">考える深さ</p>
           <div className="segmented" role="radiogroup" aria-label="考える深さ">
+            <span className="seg-thumb" aria-hidden="true" style={{ transform: `translateX(calc(${Math.max(0, efforts.findIndex((e) => e.id === effort))} * (100% + 2px)))` }} />
             {efforts.map((e) => (
               <button type="button" role="radio" aria-checked={e.id === effort} key={e.id} className={e.id === effort ? "on" : ""} onClick={() => onEffort(e.id)}>
                 {e.name}
@@ -754,11 +826,11 @@ const Composer = forwardRef<ComposerHandle, {
         <div className="grow" />
         {picker}
         {running ? (
-          <button type="button" className="send stop" onClick={onStop} aria-label="生成を停止" title="生成を停止（Esc）">
+          <button type="button" key="stop" className="send stop" onClick={onStop} aria-label="生成を停止" title="生成を停止（Esc）">
             <Icon name="stop" />
           </button>
         ) : (
-          <button type="submit" className="send" disabled={!canSend} aria-label="送信" title="送信（Enter）">
+          <button type="submit" key="send" className="send" disabled={!canSend} aria-label="送信" title="送信（Enter）">
             <Icon name="up" />
           </button>
         )}
@@ -777,10 +849,11 @@ function ConvItem({ c, active, onOpen, onRename, onDelete }: {
   const [title, setTitle] = useState(c.title);
   const close = useCallback(() => setMenu(false), []);
   const ref = useDismiss(menu, close);
+  const pop = usePresence(menu);
 
   if (mode === "rename")
     return (
-      <li className="conv editing">
+      <li className="conv editing" data-flip={c.id}>
         <input
           autoFocus
           value={title}
@@ -796,7 +869,7 @@ function ConvItem({ c, active, onOpen, onRename, onDelete }: {
     );
   if (mode === "delete")
     return (
-      <li className="conv confirming">
+      <li className="conv confirming" data-flip={c.id}>
         <span className="conv-title">「{c.title}」を削除しますか？</span>
         <div className="confirm-row">
           <button type="button" className="btn danger small" onClick={onDelete}>削除する</button>
@@ -805,15 +878,15 @@ function ConvItem({ c, active, onOpen, onRename, onDelete }: {
       </li>
     );
   return (
-    <li className={`conv ${active ? "active" : ""}`}>
+    <li className={`conv ${active ? "active" : ""}`} data-flip={c.id}>
       <a href={`/c/${c.id}`} onClick={(e) => (e.preventDefault(), onOpen())} aria-current={active ? "page" : undefined}>
         {c.running && <span className="live-dot" aria-label="応答を生成中" />}
         <span className="conv-title">{c.title}</span>
       </a>
       <div className="conv-menu" ref={ref}>
         <IconButton icon="dots" label="会話の操作" size={16} onClick={() => setMenu(!menu)} />
-        {menu && (
-          <div className="popover menu-pop" role="menu">
+        {pop.mounted && (
+          <div className={`popover menu-pop ${pop.leaving ? "leaving" : ""}`} role="menu">
             <button type="button" role="menuitem" className="pop-item" onClick={() => (setMenu(false), setTitle(c.title), setMode("rename"))}>
               <Icon name="pencil" size={15} />
               名前を変更
@@ -831,10 +904,17 @@ function ConvItem({ c, active, onOpen, onRename, onDelete }: {
 
 function ThemeSwitch() {
   const [theme, setTheme] = useStored<"system" | "light" | "dark">("shiro.theme", "system");
-  useEffect(() => {
-    if (theme === "system") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = theme;
-  }, [theme]);
+  const paint = (t: typeof theme) => {
+    if (t === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = t;
+  };
+  useEffect(() => paint(theme), [theme]);
+  // The whole page crossfades between themes instead of every colour snapping at once.
+  const choose = (t: typeof theme) => {
+    const run = () => (paint(t), setTheme(t));
+    if (document.startViewTransition && !reducedMotion()) document.startViewTransition(run);
+    else run();
+  };
   const opts = [
     { id: "system", icon: "monitor", label: "システムに合わせる" },
     { id: "light", icon: "sun", label: "明るいテーマ" },
@@ -842,8 +922,9 @@ function ThemeSwitch() {
   ] as const;
   return (
     <div className="theme-switch" role="radiogroup" aria-label="テーマ">
+      <span className="seg-thumb" aria-hidden="true" style={{ transform: `translateX(${opts.findIndex((o) => o.id === theme) * 100}%)` }} />
       {opts.map((o) => (
-        <button type="button" key={o.id} role="radio" aria-checked={theme === o.id} aria-label={o.label} title={o.label} className={theme === o.id ? "on" : ""} onClick={() => setTheme(o.id)}>
+        <button type="button" key={o.id} role="radio" aria-checked={theme === o.id} aria-label={o.label} title={o.label} className={theme === o.id ? "on" : ""} onClick={() => choose(o.id)}>
           <Icon name={o.icon} size={15} />
         </button>
       ))}
@@ -857,7 +938,29 @@ function Sidebar({ convs, currentId, srv, query, setQuery, searchRef, onNew, onO
   onNew: () => void; onOpen: (id: string) => void; onRename: (id: string, t: string) => void; onDelete: (id: string) => void;
   onLogout: () => void; onClose: () => void;
 }) {
-  const shown = convs.filter((c) => c.title.toLowerCase().includes(query.trim().toLowerCase()));
+  const shown = useMemo(() => convs.filter((c) => c.title.toLowerCase().includes(query.trim().toLowerCase())), [convs, query]);
+
+  // FLIP: when a conversation jumps to the top (or the filter changes), each row slides from where it was.
+  const listRef = useRef<HTMLElement>(null);
+  const tops = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const nav = listRef.current;
+    if (!nav) return;
+    const origin = nav.getBoundingClientRect().top - nav.scrollTop;
+    const next = new Map<string, number>();
+    const animate = tops.current.size > 0 && !reducedMotion();
+    for (const el of nav.querySelectorAll<HTMLElement>("[data-flip]")) {
+      const y = el.getBoundingClientRect().top - origin;
+      const was = tops.current.get(el.dataset.flip!);
+      next.set(el.dataset.flip!, y);
+      if (!animate) continue;
+      if (was === undefined)
+        el.animate([{ opacity: 0, transform: "translateY(-6px)" }, { opacity: 1, transform: "none" }], { duration: 220, easing: cssEase("--ease-out") });
+      else if (Math.abs(was - y) > 1)
+        el.animate([{ transform: `translateY(${was - y}px)` }, { transform: "none" }], { duration: 280, easing: cssEase("--ease-in-out") });
+    }
+    tops.current = next;
+  }, [shown]);
   const groups: [string, ConvMeta[]][] = [];
   for (const c of shown) {
     const g = groupLabel(c.updatedAt);
@@ -887,10 +990,10 @@ function Sidebar({ convs, currentId, srv, query, setQuery, searchRef, onNew, onO
         <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="会話を検索" aria-label="会話を検索" />
         {!query && <kbd>Ctrl K</kbd>}
       </label>
-      <nav className="conv-list">
+      <nav className="conv-list" ref={listRef}>
         {groups.map(([g, cs]) => (
           <section key={g}>
-            <h2>{g}</h2>
+            <h2 data-flip={`group:${g}`}>{g}</h2>
             <ul>
               {cs.map((c) => (
                 <ConvItem key={c.id} c={c} active={c.id === currentId} onOpen={() => onOpen(c.id)} onRename={(t) => onRename(c.id, t)} onDelete={() => onDelete(c.id)} />
@@ -948,6 +1051,9 @@ function App() {
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState<{ msg: string; leaving: boolean } | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const lightboxPresence = usePresence(!!lightbox, 200);
+  const lightboxSrc = useRef<string | null>(null);
+  if (lightbox) lightboxSrc.current = lightbox;
   const [dragging, setDragging] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [prefs, setPrefs] = useStored<{ model?: string; effort: Effort; autoApprove?: boolean }>("shiro.new", { effort: "medium" });
@@ -1194,7 +1300,7 @@ function App() {
         <header className="topbar">
           {!sidebar && <IconButton icon="panel" label="サイドバーを開く" onClick={() => setSidebar(true)} />}
           {!sidebar && <IconButton icon="compose" label="新しい会話" onClick={newChat} />}
-          <h1 className="top-title">{showThread ? conv.meta.title : ""}</h1>
+          <h1 className="top-title" key={showThread ? conv.meta.id : "none"}>{showThread ? conv.meta.title : ""}</h1>
           {!online && <span className="offline" role="status">サーバーとの接続が切れています。再接続しています</span>}
         </header>
 
@@ -1255,9 +1361,9 @@ function App() {
           <p>画像をここにドロップして添付</p>
         </div>
       )}
-      {lightbox && (
-        <div className="lightbox" role="dialog" aria-label="画像" onClick={() => setLightbox(null)} onKeyDown={(e) => e.key === "Escape" && setLightbox(null)} tabIndex={-1} ref={(el) => el?.focus()}>
-          <img src={lightbox} alt="" />
+      {lightboxPresence.mounted && (
+        <div className={`lightbox ${lightboxPresence.leaving ? "leaving" : ""}`} role="dialog" aria-label="画像" onClick={() => setLightbox(null)} onKeyDown={(e) => e.key === "Escape" && setLightbox(null)} tabIndex={-1} ref={(el) => el?.focus()}>
+          <img src={lightboxSrc.current ?? ""} alt="" />
           <IconButton icon="x" label="閉じる" className="lightbox-close" onClick={() => setLightbox(null)} />
         </div>
       )}

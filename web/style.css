@@ -24,6 +24,7 @@
   --mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   --column: 46rem;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   color-scheme: light;
 }
@@ -321,7 +322,7 @@ kbd {
 
 .theme-switch { display: flex; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
 .theme-switch button { width: 26px; height: 24px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); }
-.theme-switch button.on { background: var(--surface); color: var(--text); }
+.theme-switch button.on { color: var(--text); }
 
 /* ─── popovers ─────────────────────────────────────────────────────── */
 
@@ -376,7 +377,7 @@ kbd {
 
 .segmented { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 2px; margin: 0 4px 4px; background: var(--surface); border-radius: 10px; }
 .segmented button { padding: 6px 0; border-radius: 8px; font-size: 12.5px; color: var(--muted); }
-.segmented button.on { background: var(--raised); color: var(--text); font-weight: 500; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.segmented button.on { color: var(--text); font-weight: 500; }
 
 /* ─── empty state ──────────────────────────────────────────────────── */
 
@@ -795,15 +796,6 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
 .lightbox-close { position: absolute; top: 14px; right: 14px; color: #eae8e0; }
 .lightbox-close:hover:not(:disabled) { background: rgb(255 255 255 / 0.12); color: #fff; }
 
-@media (prefers-reduced-motion: reduce) {
-  /* Fewer, gentler: drop movement, keep fades, and keep every "working" indicator alive as a pulse. */
-  .ring.grow path { animation: none; stroke-dashoffset: 0; }
-  .spin, .step.is-live .step-node .icon { animation: breathe 1.6s ease-in-out infinite; }
-  .tip span { animation: breathe 1.6s ease-in-out infinite; transform: none; }
-  .sidebar { transition: none !important; }
-  .popover, .approve, .toast, .toast.leaving, .to-latest, .step-body, .msg.is-new, .msg.is-new .step, .lightbox img,
-  .send:not(:disabled):active, .btn:not(:disabled):active, .chip:active, .new-chat:active { transform: none !important; }
-}
 
 /* ─── automatic approval (TypeSafe Jev) ────────────────────────────── */
 
@@ -890,12 +882,6 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
   .msg.is-new .step { opacity: 0; transform: translateY(4px); }
 }
 
-/* Opening a step slides its details down from the row that was clicked. Closing is instant. */
-.step-body { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
-@starting-style { .step-body { opacity: 0; transform: translateY(-4px); } }
-
-@starting-style { .approve { opacity: 0; transform: translateY(-4px) scale(0.98); } }
-
 .to-latest { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
 @starting-style { .to-latest { opacity: 0; transform: translateY(6px); } }
 
@@ -907,4 +893,73 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
 @starting-style {
   .lightbox { opacity: 0; }
   .lightbox img { transform: scale(0.96); }
+}
+
+/* Panels that open and close in place (step details, the approval card): an accordion, the one case
+   where animating height is acceptable, done with grid rows so content needs no measuring. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 220ms var(--ease-out), opacity 220ms var(--ease-out);
+}
+.collapse.open { grid-template-rows: 1fr; opacity: 1; }
+@starting-style { .collapse.open { grid-template-rows: 0fr; opacity: 0; } }
+.collapse-inner { overflow: hidden; min-height: 0; }
+
+/* Popovers leave faster than they arrive: the system answering, not the user deciding. */
+.popover.leaving { opacity: 0; transform: scale(0.97); transition-duration: 100ms; pointer-events: none; }
+
+/* A selection thumb that slides between options. */
+.segmented, .theme-switch { position: relative; }
+.segmented button, .theme-switch button { position: relative; z-index: 1; transition: color 150ms ease; }
+.seg-thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; transition: transform 220ms var(--ease-out); }
+.segmented .seg-thumb { width: calc((100% - 10px) / 4); border-radius: 8px; background: var(--raised); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.theme-switch .seg-thumb { width: 26px; border-radius: 7px; background: var(--surface); }
+
+/* A new chat assembles top to bottom: ring, greeting, composer, suggestions, 40ms apart. */
+.empty > * { transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out); }
+.empty > :nth-child(2) { transition-delay: 40ms; }
+.empty > :nth-child(3) { transition-delay: 80ms; }
+.empty > :nth-child(4) { transition-delay: 120ms; }
+@starting-style { .empty > * { opacity: 0; transform: translateY(6px); } }
+
+/* Switching conversations crossfades the thread and its title. */
+.column, .top-title { transition: opacity 180ms var(--ease-out); }
+@starting-style { .column, .top-title { opacity: 0; } }
+
+/* On wide screens the sidebar slides and fades in place of the instant display toggle. */
+@media (min-width: 900px) {
+  .sidebar {
+    opacity: 0;
+    transform: translateX(-12px);
+    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), display 200ms allow-discrete;
+  }
+  .side-open .sidebar { opacity: 1; transform: none; }
+  @starting-style { .side-open .sidebar { opacity: 0; transform: translateX(-12px); } }
+}
+
+.send .icon { transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out); }
+@starting-style { .send .icon { opacity: 0; transform: scale(0.6); } }
+
+.attach { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+@starting-style { .attach { opacity: 0; transform: scale(0.9); } }
+
+.lightbox.leaving { opacity: 0; pointer-events: none; }
+.lightbox.leaving img { transform: scale(0.96); }
+
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 240ms; animation-timing-function: var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Fewer, gentler: drop movement, keep fades, and keep every "working" indicator alive as a pulse. */
+  .ring.grow path { animation: none; stroke-dashoffset: 0; }
+  .spin, .step.is-live .step-node .icon { animation: breathe 1.6s ease-in-out infinite; }
+  .tip span { animation: breathe 1.6s ease-in-out infinite; transform: none; }
+  .sidebar { transition: none !important; transform: none !important; }
+  .collapse { transition: none; }
+  .seg-thumb { transition: none; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  .popover, .popover.leaving, .approve, .toast, .toast.leaving, .to-latest, .msg.is-new, .msg.is-new .step, .lightbox img,
+  .empty > *, .send .icon, .attach,
+  .send:not(:disabled):active, .btn:not(:disabled):active, .chip:active, .new-chat:active { transform: none !important; }
 }
