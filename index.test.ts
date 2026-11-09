@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { runTool } from "./index";
+import { runTool } from "./tools";
 
 test("edit_file replaces only a unique match", async () => {
   const p = `${import.meta.dir}/.tmp-edit.txt`;

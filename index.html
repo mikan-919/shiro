@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>shiro</title>
+    <style>
+      :root { --bg: #fafafa; --fg: #1a1a1a; --muted: #6b6b6b; --line: #ddd; --box: #f0f0f0; --accent: #2b6cb0; --err: #c53030; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #141414; --fg: #e6e6e6; --muted: #999; --line: #333; --box: #1f1f1f; --accent: #63b3ed; --err: #fc8181; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 system-ui, sans-serif; display: flex; flex-direction: column; height: 100dvh; }
+      header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+      header .status { color: var(--muted); font-size: 13px; margin-left: auto; }
+      main { flex: 1; overflow-y: auto; padding: 16px; max-width: 900px; width: 100%; margin: 0 auto; }
+      main > div { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .user { background: var(--box); border-radius: 6px; padding: 8px 12px; }
+      .tool, pre { font: 13px/1.5 ui-monospace, monospace; color: var(--muted); }
+      pre { background: var(--box); padding: 8px; margin: 4px 0; overflow-x: auto; white-space: pre-wrap; }
+      .confirm { border: 1px solid var(--accent); border-radius: 6px; padding: 8px 12px; }
+      .error { color: var(--err); }
+      form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); max-width: 900px; width: 100%; margin: 0 auto; }
+      textarea { flex: 1; resize: none; font: inherit; padding: 8px; background: var(--box); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+      button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--box); color: var(--fg); cursor: pointer; }
+      button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+      button:disabled { opacity: 0.5; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>shiro</strong>
+      <button id="login" hidden>ChatGPTでログイン</button>
+      <span class="status" id="status">接続中…</span>
+    </header>
+    <main id="log"></main>
+    <form id="form">
+      <textarea id="text" rows="3" placeholder="指示を入力（Enterで送信、Shift+Enterで改行）"></textarea>
+      <button class="primary" id="send">送信</button>
+    </form>
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const logEl = $("log");
+      let cur = null; // assistant text element being streamed into
+      let busy = false, authed = false;
+
+      const add = (cls, text) => {
+        const el = document.createElement("div");
+        el.className = cls;
+        if (text !== undefined) el.textContent = text;
+        logEl.append(el);
+        logEl.scrollTop = logEl.scrollHeight;
+        return el;
+      };
+      const pre = (text) => Object.assign(document.createElement("pre"), { textContent: text });
+      const sync = () => ($("send").disabled = busy || !authed);
+
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      const send = (m) => ws.send(JSON.stringify(m));
+      ws.onopen = () => ($("status").textContent = "接続済み");
+      ws.onclose = () => ($("status").textContent = "切断されました（再読み込みしてください）");
+      ws.onmessage = (msg) => {
+        const e = JSON.parse(msg.data);
+        if (e.type === "delta") {
+          cur ??= add("assistant", "");
+          cur.textContent += e.text;
+          logEl.scrollTop = logEl.scrollHeight;
+          return;
+        }
+        cur = null;
+        if (e.type === "user") { add("user", e.text); busy = true; }
+        else if (e.type === "done") busy = false;
+        else if (e.type === "tool") add("tool", `[${e.name}] ${e.args}`);
+        else if (e.type === "tool_result") {
+          const d = add("");
+          d.innerHTML = "<details><summary class=tool>結果</summary></details>";
+          d.firstChild.append(pre(e.output));
+        } else if (e.type === "confirm") {
+          const d = add("confirm", "次のコマンドを実行しますか？");
+          d.id = `c-${e.id}`;
+          d.append(pre(e.command));
+          for (const [label, ok] of [["許可", true], ["拒否", false]]) {
+            const b = Object.assign(document.createElement("button"), { textContent: label });
+            b.onclick = () => send({ type: "answer", id: e.id, ok });
+            d.append(b, " ");
+          }
+        } else if (e.type === "confirmed") {
+          const d = $(`c-${e.id}`);
+          if (d) { d.querySelectorAll("button").forEach((b) => b.remove()); d.append(e.ok ? "許可しました" : "拒否しました"); }
+        } else if (e.type === "error") add("error", e.message);
+        else if (e.type === "auth") { authed = e.ok; $("login").hidden = e.ok; }
+        sync();
+      };
+
+      $("login").onclick = async () => {
+        const res = await fetch("/login", { method: "POST" });
+        const { url } = await res.json();
+        location.href = url; // returns to this page after login
+      };
+      $("form").onsubmit = (ev) => {
+        ev.preventDefault();
+        const text = $("text").value;
+        if (!text.trim() || $("send").disabled) return;
+        send({ type: "prompt", text });
+        $("text").value = "";
+      };
+      $("text").onkeydown = (ev) => {
+        if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); $("form").requestSubmit(); }
+      };
+    </script>
+  </body>
+</html>

@@ -32,9 +32,10 @@ async function token(params: Record<string, string>): Promise<Cred> {
   return cred;
 }
 
-async function login(): Promise<Cred> {
+/** Starts a callback server on :1455 and returns the URL to open. After login the browser is sent to returnTo. */
+export function startLogin(returnTo: string): { url: string; done: Promise<Cred> } {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
-  const challenge = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
+  const challenge = b64url(new Bun.CryptoHasher("sha256").update(verifier).digest());
   const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
   const url = new URL(`${AUTH}/oauth/authorize`);
   for (const [k, v] of Object.entries({
@@ -44,6 +45,7 @@ async function login(): Promise<Cred> {
   })) url.searchParams.set(k, v);
 
   const { promise, resolve, reject } = Promise.withResolvers<string>();
+  const timer = setTimeout(() => reject(new Error("login timed out")), 10 * 60_000);
   // ponytail: port 1455 is shared with Codex CLI; add pasted-URL fallback or device-code login if it collides
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -57,20 +59,20 @@ async function login(): Promise<Cred> {
         return new Response("login failed", { status: 400 });
       }
       resolve(code);
-      return new Response("ログインしました。ターミナルに戻ってください。", { headers: { "content-type": "text/plain; charset=utf-8" } });
+      return Response.redirect(returnTo, 302);
     },
   });
-  console.log(`ブラウザで開いてログインしてください:\n${url}`);
-  try {
-    return await token({ grant_type: "authorization_code", code: await promise, code_verifier: verifier, redirect_uri: REDIRECT_URI });
-  } finally {
-    server.stop();
-  }
+  const done = promise
+    .then((code) => token({ grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: REDIRECT_URI }))
+    .finally(() => (clearTimeout(timer), server.stop()));
+  return { url: url.toString(), done };
 }
+
+export const hasCred = () => Bun.file(FILE).exists();
 
 export async function getCred(): Promise<Cred> {
   const f = Bun.file(FILE);
-  if (!(await f.exists())) return login();
+  if (!(await f.exists())) throw new Error("not logged in");
   const cred = (await f.json()) as Cred;
   if (cred.expires - Date.now() > 60_000) return cred;
   return token({ grant_type: "refresh_token", refresh_token: cred.refresh });
