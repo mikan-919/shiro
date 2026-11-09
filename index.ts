@@ -1,6 +1,7 @@
 import OpenAI from "openai";
-import type { ResponseInputItem, FunctionTool } from "openai/resources/responses/responses";
+import type { ResponseInputItem, ResponseFunctionToolCall, FunctionTool } from "openai/resources/responses/responses";
 import { createInterface } from "node:readline/promises";
+import { getCred } from "./auth";
 
 const MODEL = process.env.SHIRO_MODEL ?? "gpt-6.1-sol";
 
@@ -52,7 +53,8 @@ export async function runTool(name: string, a: Record<string, string>, confirm: 
 async function main() {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const confirm = async (q: string) => (await rl.question(`${q}\n実行しますか? [y/N] `)).trim().toLowerCase() === "y";
-  const client = new OpenAI(); // OPENAI_API_KEY
+  await getCred(); // log in before the first prompt
+  const session = crypto.randomUUID();
   const instructions = `You are a coding agent working in ${process.cwd()}. Use the tools to inspect and change files. Be concise.`;
   const input: ResponseInputItem[] = []; // ponytail: full history resent each turn, add compaction when context fills up
 
@@ -62,10 +64,25 @@ async function main() {
     input.push({ role: "user", content: line });
 
     while (true) {
-      const res = await client.responses.create({ model: MODEL, instructions, input, tools: TOOLS, store: false, include: ["reasoning.encrypted_content"] });
-      input.push(...(res.output as ResponseInputItem[]));
-      const calls = res.output.filter((o) => o.type === "function_call");
-      if (res.output_text) console.log(res.output_text);
+      const { access, accountId } = await getCred();
+      const client = new OpenAI({
+        apiKey: access,
+        baseURL: "https://chatgpt.com/backend-api/codex",
+        defaultHeaders: { "chatgpt-account-id": accountId, "OpenAI-Beta": "responses=experimental", originator: "shiro", "session-id": session },
+      });
+      const stream = await client.responses.create({
+        model: MODEL, instructions, input, tools: TOOLS, tool_choice: "auto", parallel_tool_calls: true,
+        store: false, stream: true, include: ["reasoning.encrypted_content"], prompt_cache_key: session,
+      });
+      const calls: ResponseFunctionToolCall[] = [];
+      for await (const ev of stream) {
+        if (ev.type === "response.output_text.delta") process.stdout.write(ev.delta);
+        else if (ev.type === "response.output_item.done") {
+          input.push(ev.item as ResponseInputItem);
+          if (ev.item.type === "function_call") calls.push(ev.item);
+        } else if (ev.type === "response.failed") throw new Error(ev.response.error?.message ?? "response failed");
+      }
+      process.stdout.write("\n");
       if (!calls.length) break;
 
       for (const c of calls) {

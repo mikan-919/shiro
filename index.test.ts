@@ -11,3 +11,10 @@ test("edit_file replaces only a unique match", async () => {
   expect(await runTool("bash", { command: "echo hi" }, no)).toBe("user denied this command");
   await Bun.file(p).delete();
 });
+
+test("accountIdOf reads chatgpt_account_id from the JWT payload", async () => {
+  const { accountIdOf } = await import("./auth");
+  const p = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_1" } })).toString("base64url");
+  expect(accountIdOf(`h.${p}.s`)).toBe("acc_1");
+  expect(() => accountIdOf(`h.${Buffer.from("{}").toString("base64url")}.s`)).toThrow();
+});
