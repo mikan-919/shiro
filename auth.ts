@@ -69,6 +69,18 @@ export function startLogin(returnTo: string): { url: string; done: Promise<Cred>
 }
 
 export const hasCred = () => Bun.file(FILE).exists();
+export const logout = () => Bun.file(FILE).delete().catch(() => {});
+
+/** Email and plan for display. The access token carries them as claims; missing claims are fine. */
+export async function account(): Promise<{ email?: string; plan?: string }> {
+  try {
+    const { access } = await getCred();
+    const p = JSON.parse(Buffer.from(access.split(".")[1] ?? "", "base64url").toString());
+    return { email: p?.["https://api.openai.com/profile"]?.email, plan: p?.["https://api.openai.com/auth"]?.chatgpt_plan_type };
+  } catch {
+    return {};
+  }
+}
 
 export async function getCred(): Promise<Cred> {
   const f = Bun.file(FILE);

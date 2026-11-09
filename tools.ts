@@ -22,10 +22,19 @@ export const TOOLS = [
   tool("bash", "Run a shell command in the current directory. The user approves each call.", { command: "Command" }),
 ];
 
-export async function runTool(name: string, a: Record<string, string>, confirm: (command: string) => Promise<boolean>) {
+// Keeps one huge file or log from filling the context window.
+const LIMIT = 50_000;
+const cap = (s: string) => (s.length > LIMIT ? `${s.slice(0, LIMIT)}\n… (${s.length - LIMIT} chars truncated)` : s);
+
+export async function runTool(
+  name: string,
+  a: Record<string, string>,
+  confirm: (command: string) => Promise<boolean>,
+  signal?: AbortSignal,
+): Promise<string> {
   switch (name) {
     case "read_file":
-      return await Bun.file(a.path!).text();
+      return cap(await Bun.file(a.path!).text());
     case "write_file":
       await Bun.write(a.path!, a.content!);
       return `wrote ${a.path}`;
@@ -38,8 +47,9 @@ export async function runTool(name: string, a: Record<string, string>, confirm: 
     }
     case "bash": {
       if (!(await confirm(a.command!))) return "user denied this command";
-      const r = await Bun.$`bash -c ${a.command!}`.nothrow().quiet();
-      return `exit ${r.exitCode}\n${r.stdout}${r.stderr}`;
+      const p = Bun.spawn(["bash", "-c", a.command!], { stdout: "pipe", stderr: "pipe", signal });
+      const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+      return cap(`exit ${code}\n${out}${err}`);
     }
   }
   throw new Error(`unknown tool ${name}`);

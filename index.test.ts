@@ -18,3 +18,26 @@ test("accountIdOf reads chatgpt_account_id from the JWT payload", async () => {
   expect(accountIdOf(`h.${p}.s`)).toBe("acc_1");
   expect(() => accountIdOf(`h.${Buffer.from("{}").toString("base64url")}.s`)).toThrow();
 });
+
+test("apply builds an assistant message from streamed events", async () => {
+  const { apply } = await import("./shared");
+  type M = import("./shared").Message[];
+  let m: M = [];
+  m = apply(m, { t: "user", msg: { id: "u", role: "user", text: "hi", images: [], itemIndex: 0 } });
+  m = apply(m, { t: "assistant", id: "a", model: "x" });
+  m = apply(m, { t: "reasoning_delta", text: "**Look**" });
+  m = apply(m, { t: "reasoning_end" });
+  m = apply(m, { t: "text_delta", text: "he" });
+  m = apply(m, { t: "text_delta", text: "llo" });
+  m = apply(m, { t: "tool", id: "c1", name: "bash", args: "{}" });
+  m = apply(m, { t: "tool_status", id: "c1", status: "done", output: "ok" });
+  m = apply(m, { t: "text_delta", text: "done" });
+  const before = m;
+  m = apply(m, { t: "end", status: "done" });
+  const a = m[1]!;
+  expect(a.role === "assistant" && a.status).toBe("done");
+  expect(a.role === "assistant" && a.parts.map((p) => p.type)).toEqual(["reasoning", "text", "tool", "text"]);
+  expect(a.role === "assistant" && a.parts[1]).toEqual({ type: "text", text: "hello" });
+  expect(before[1]).not.toBe(m[1]); // immutable for React
+  expect(apply(m, { t: "truncate", at: 0 })).toEqual([]);
+});

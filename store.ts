@@ -1,0 +1,72 @@
+import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { homedir } from "node:os";
+import type { ResponseInputItem } from "openai/resources/responses/responses";
+import { apply, type ConvMeta, type Effort, type Message } from "./shared";
+
+export type Conv = { meta: ConvMeta; messages: Message[]; items: ResponseInputItem[] };
+
+const path = process.env.SHIRO_DB ?? `${homedir()}/.shiro/shiro.db`;
+if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
+const db = new Database(path, { create: true, strict: true });
+db.run("PRAGMA journal_mode = WAL");
+db.run(`CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, model TEXT NOT NULL, effort TEXT NOT NULL,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  messages TEXT NOT NULL, items TEXT NOT NULL)`);
+
+type Row = { id: string; title: string; model: string; effort: Effort; created_at: number; updated_at: number };
+const meta = (r: Row): ConvMeta => ({
+  id: r.id, title: r.title, model: r.model, effort: r.effort, createdAt: r.created_at, updatedAt: r.updated_at, running: false,
+});
+
+const cache = new Map<string, Conv>();
+
+export function list(): ConvMeta[] {
+  const rows = db.query<Row, []>("SELECT id, title, model, effort, created_at, updated_at FROM conversations ORDER BY updated_at DESC").all();
+  return rows.map((r) => cache.get(r.id)?.meta ?? meta(r));
+}
+
+export function get(id: string): Conv | undefined {
+  const hit = cache.get(id);
+  if (hit) return hit;
+  const r = db.query<Row & { messages: string; items: string }, [string]>("SELECT * FROM conversations WHERE id = ?").get(id);
+  if (!r) return;
+  let messages = JSON.parse(r.messages) as Message[];
+  // A turn that was streaming when the process died can never finish.
+  const last = messages.at(-1);
+  if (last?.role === "assistant" && last.status === "streaming") messages = apply(messages, { t: "end", status: "stopped" });
+  const conv = { meta: meta(r), messages, items: JSON.parse(r.items) };
+  cache.set(id, conv);
+  return conv;
+}
+
+export function create(model: string, effort: Effort): Conv {
+  const now = Date.now();
+  const conv: Conv = {
+    meta: { id: crypto.randomUUID(), title: "新しい会話", model, effort, createdAt: now, updatedAt: now, running: false },
+    messages: [],
+    items: [],
+  };
+  cache.set(conv.meta.id, conv);
+  save(conv);
+  return conv;
+}
+
+export function save(c: Conv) {
+  const m = c.meta;
+  db.query(
+    `INSERT INTO conversations (id, title, model, effort, created_at, updated_at, messages, items)
+     VALUES ($id, $title, $model, $effort, $created, $updated, $messages, $items)
+     ON CONFLICT(id) DO UPDATE SET title=$title, model=$model, effort=$effort, updated_at=$updated, messages=$messages, items=$items`,
+  ).run({
+    id: m.id, title: m.title, model: m.model, effort: m.effort, created: m.createdAt, updated: m.updatedAt,
+    messages: JSON.stringify(c.messages), items: JSON.stringify(c.items),
+  });
+}
+
+export function remove(id: string) {
+  cache.delete(id);
+  db.query("DELETE FROM conversations WHERE id = ?").run(id);
+}
