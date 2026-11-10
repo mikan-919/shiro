@@ -25,6 +25,24 @@ if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().so
 if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "board"))
   db.run("ALTER TABLE conversations ADD COLUMN board TEXT");
 
+// The substrate: every coordination event, appended and never rewritten or evicted. Rows outlive board resets,
+// edits, regeneration and conversation deletion, so replay can read them later. `v` is the schema version the
+// row was written under; bump it when a record shape is added, and keep reading old ones.
+export const SUBSTRATE_VERSION = 0;
+db.run(`CREATE TABLE IF NOT EXISTS substrate (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, v INTEGER NOT NULL,
+  conv TEXT NOT NULL, turn TEXT NOT NULL, agent TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL)`);
+
+export type Gist = { seq: number; at: number; v: number; conv: string; turn: string; agent: string; kind: string; body: unknown };
+export function append(g: { conv: string; turn: string; agent: string; kind: string; body: unknown }) {
+  db.query("INSERT INTO substrate (at, v, conv, turn, agent, kind, body) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(Date.now(), SUBSTRATE_VERSION, g.conv, g.turn, g.agent, g.kind, JSON.stringify(g.body));
+}
+export function substrate(conv: string): Gist[] {
+  return db.query<Omit<Gist, "body"> & { body: string }, [string]>("SELECT * FROM substrate WHERE conv = ? ORDER BY seq").all(conv)
+    .map((r) => ({ ...r, body: JSON.parse(r.body) }));
+}
+
 type Row = { id: string; title: string; model: string; effort: Effort; created_at: number; updated_at: number; auto_approve: number };
 const meta = (r: Row): ConvMeta => ({
   id: r.id, title: r.title, model: r.model, effort: r.effort, autoApprove: r.auto_approve === 1, createdAt: r.created_at, updatedAt: r.updated_at,

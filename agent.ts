@@ -64,6 +64,8 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
     const itemIndex = c.items.length;
     if (!c.messages.length && !rewound) c.meta.title = text.replace(/\s+/g, " ").trim().slice(0, 40) || "画像";
     const userId = crypto.randomUUID();
+    const log = (agent: string, kind: string, body: unknown) => store.append({ conv: c.meta.id, turn: userId, agent, kind, body });
+    log("user", "user", { text, images: images.length });
     emit(c, { t: "user", msg: { id: userId, role: "user", text, images, itemIndex } });
     // The model sees the message id (to react to it) and what the user did since its last turn.
     const userText = [...(notes.get(c.meta.id) ?? []), `[#${shortId(userId)}] ${text}`].join("\n");
@@ -116,6 +118,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
       const team = { act(action: string, id: string, text: string) {
         signal.throwIfAborted();
         const result = rawTeam.act(action, id, text);
+        if (action !== "read") log(agent, action, { id, text, result: action === "publish" ? undefined : result });
         if (action === "claim") claimed = true;
         if (action === "publish" && claimed && board.state.tasks.some((t) => t.owner === agent && !t.done)) started();
         return result;
@@ -164,7 +167,12 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
             }
           }
           if (!calls.length) break;
-          for (const fc of calls) history.push({ type: "function_call_output", call_id: fc.call_id, output: await call(fc) });
+          for (const fc of calls) {
+            const output = await call(fc);
+            // The team tool is logged per action above; the rest is the episode trace that replay needs.
+            if (fc.name !== "team") log(agent, "tool", { name: fc.name, args: fc.arguments, output });
+            history.push({ type: "function_call_output", call_id: fc.call_id, output });
+          }
         }
         signal.throwIfAborted();
         workerEmit({ t: "end", status: "done" });

@@ -347,3 +347,26 @@ test("stopping before assignment sharing never starts the three waiting peers", 
   expect(assistants).toEqual(["shiro-1"]);
   agent.remove(id);
 });
+
+test("the substrate log keeps every coordination event after the board resets and the conversation is deleted", async () => {
+  const calls = new Map<string, number>();
+  const response: typeof respond = async function* (o) {
+    if (!o.session.endsWith("shiro-1")) return;
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (n % 3 === 0) yield item("team", { action: "publish", id: "", text: "[type-gap] wanted: promise" });
+    else if (n % 3 === 1) yield item("send_message", { text: "done" });
+  };
+  const { agent, id } = setup(response);
+  for (const text of ["first", "second"]) {
+    agent.send(id, text, []);
+    await until(() => !agent.open(id)!.meta.running);
+  }
+  agent.remove(id);
+  const log = store.substrate(id);
+  expect(log.map((g) => `${g.agent}:${g.kind}`)).toEqual(Array(2).fill(["user:user", "shiro-1:publish", "shiro-1:publish", "shiro-1:tool"]).flat());
+  expect(log.filter((g) => (g.body as { text?: string }).text?.startsWith("[type-gap]"))).toHaveLength(2);
+  expect(new Set(log.map((g) => g.turn)).size).toBe(2);
+  expect(log.every((g) => g.v === store.SUBSTRATE_VERSION)).toBe(true);
+  expect(log[3]!.body).toMatchObject({ name: "send_message", output: expect.any(String) });
+});
