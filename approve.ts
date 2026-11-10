@@ -27,8 +27,8 @@ const RISKY: [RegExp, string][] = [
   [/^(wrangler|vercel|fly|flyctl|netlify)\s+deploy\b|^terraform\s+(apply|destroy)\b|^kubectl\s+(delete|apply)\b|^docker\s+(rm|rmi|system\s+prune)\b/, "デプロイや外部環境を変える操作です"],
   [/^(curl|wget)\b.*\s(-d|--data\S*|-X\s*(POST|PUT|PATCH|DELETE)|-T|--upload-file|-o|-O)\b/, "外部へ送信またはファイルを書き込む通信です"],
   [/^(ssh|scp|rsync|sftp|nc|ncat|telnet)\b/, "他のマシンに接続するコマンドです"],
-  [/\.env\b|\.ssh\b|\.aws\b|\.npmrc\b|\.netrc\b|\.gnupg\b|credentials|id_rsa|id_ed25519|\.shiro\b/i, "認証情報に触れる可能性があります"],
 ];
+const SECRETS = /\.env\b|\.ssh\b|\.aws\b|\.npmrc\b|\.netrc\b|\.gnupg\b|credentials|id_rsa|id_ed25519|\.shiro\b/i;
 const KEYWORDS = /^(if|then|elif|else|fi|while|until|do|done|for|in|case|esac|!)(\s+|$)/;
 const WRAPPERS = /^(command|builtin|env|nohup|time|timeout|nice|watch|npx|bunx|pnpx)(\s+|$)/;
 const ASSIGN = /^[A-Za-z_]\w*=[^\s'"`$\\]*(\s+|$)/;
@@ -46,8 +46,13 @@ function normalise(s: string): string {
 /** Returns why a command must be confirmed by the user, or null if Jev may decide. */
 export function neverAuto(command: string): string | null {
   if (/\$\(|<\(|>\(|`|\\\n/.test(command)) return "コマンド置換を含むコマンドです";
+  if (SECRETS.test(command)) return "認証情報に触れる可能性があります";
+  // A quoted argument is one literal word (a grep pattern with | or > in it), so empty it before splitting.
+  // The quotes stay, so a quoted command name or a leftover unpaired quote still trips the first rule.
+  // One left-to-right pass, so a ' inside "..." is not taken as an opening quote; a backslash could escape a quote, so skip it then.
+  const unquoted = command.includes("\\") ? command : command.replace(/'[^']*'|"[^"$`]*"/g, (q) => q[0]! + q[0]);
   // Redirects that only merge or discard output write no file; drop them before looking further.
-  const plain = command.replace(/\d*>&\d|&>\s*\/dev\/null|\d*>\s*\/dev\/null/g, " ");
+  const plain = unquoted.replace(/\d*>&\d|&>\s*\/dev\/null|\d*>\s*\/dev\/null/g, " ");
   if (/>/.test(plain)) return "リダイレクトでファイルに書き込むコマンドです";
   for (const piece of plain.split(/&&|\|\||[;|&\n(){}]/)) {
     const cmd = normalise(piece);
