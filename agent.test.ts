@@ -13,7 +13,7 @@ const store = await import("./store");
 if (oldDB === undefined) delete process.env.SHIRO_DB; else process.env.SHIRO_DB = oldDB;
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-const item = (name: string, args: object): CodexEvent => ({ type: "item", item: { type: "function_call", call_id: "same-id", name, arguments: JSON.stringify(args) } });
+const item = (name: string, args: object): CodexEvent => ({ type: "item", item: { type: "function_call", call_id: "same-id", name, arguments: JSON.stringify(name === "team" ? { files: "", ...args } : args) } });
 /** The queue starts empty and peers join only for unclaimed tasks, so the first peer queues one task per peer. */
 function* seed(o: { session: string }, n = 4) {
   if (o.session.endsWith("shiro-1")) for (let i = 0; i < n; i++) yield item("team", { action: "add", id: "", text: `part ${i}` });
@@ -617,7 +617,7 @@ test("the observer reads a finished turn once, appends cited type-gaps, and skip
   expect(rows.find((r) => r.kind === "observe")!.body).toEqual({ gaps: 1 });
   expect(seen).toHaveLength(1);
   expect(seen[0]).toContain("shiro-1 type-gap: wanted file ownership"); // It sees the self-report, so it need not repeat it.
-  expect(rows.every((r) => r.v === 1)).toBe(true);
+  expect(rows.every((r) => r.v === store.SUBSTRATE_VERSION)).toBe(true);
   chat = true;
   calls.clear();
   agent.send(id, "chat", []);

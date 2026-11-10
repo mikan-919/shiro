@@ -131,10 +131,10 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
       const workerEmit = (ev: Ev) => { if (!turn.deleted) emit(c, { ...ev, message }); };
       workerEmit({ t: "assistant", id: message, model: c.meta.model, agent });
       const rawTeam = board.forAgent(agent);
-      const team = { act(action: string, id: string, text: string) {
+      const team = { act(action: string, id: string, text: string, files = "") {
         signal.throwIfAborted();
-        const result = rawTeam.act(action, id, text);
-        if (action !== "read") log(agent, action, { id, text, result: action === "publish" ? undefined : result });
+        const result = rawTeam.act(action, id, text, files);
+        if (action !== "read") log(agent, action, { id, text, files: files || undefined, result: action === "publish" ? undefined : result });
         acted(action);
         return result;
       } };

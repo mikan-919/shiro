@@ -20,6 +20,9 @@ test("task claims are atomic, owner-checked and releasable", () => {
   expect(() => a.act("claim", first.id, "")).toThrow();
   a.act("publish", "", "evidence");
   expect(JSON.parse(b.act("read", "", "")).notes[0].text).toBe("evidence");
+  a.act("add", "", "docs", "README.md, docs/a.md");
+  expect(board.state.tasks[2]?.files).toEqual(["README.md", "docs/a.md"]);
+  expect(JSON.parse(b.act("claim", board.state.tasks[2]!.id, "", "README.md")).files).toEqual(["README.md"]);
   expect(saves).toBeGreaterThan(0);
 });
 

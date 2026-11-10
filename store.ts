@@ -29,8 +29,9 @@ if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().so
 // edits, regeneration and conversation deletion, so replay can read them later. `v` is the schema version the
 // row was written under; bump it when a gist type is added, and keep reading old ones (docs/adr/0002).
 // v0: note (publish) and task (add, claim, complete, release). v1 adds type-gap, settled and retract.
+// v2 adds `files` to the task (the paths its owner edits).
 // Every other kind is an episode event, not a gist.
-export const SUBSTRATE_VERSION = 1;
+export const SUBSTRATE_VERSION = 2;
 db.run(`CREATE TABLE IF NOT EXISTS substrate (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, v INTEGER NOT NULL,
   conv TEXT NOT NULL, turn TEXT NOT NULL, agent TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL)`);

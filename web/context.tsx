@@ -56,6 +56,7 @@ export function ContextPage({ board, running, title }: { board?: Board; running:
             <li className="context-card" key={task.id}>
               <div className="context-card-head"><span className={`context-tag ${task.done ? "done" : ""}`}>{task.done ? "完了" : task.owner ? "作業中" : "未着手"}</span><span>{task.owner ?? "担当なし"}</span></div>
               <p>{task.text}</p>
+              {task.files && <small>{task.files.join(", ")}</small>}
               {task.result && <div className="context-result"><span>結果</span><p>{task.result}</p></div>}
               <small className="context-task-id">{task.id}</small>
             </li>

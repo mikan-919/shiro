@@ -4,7 +4,7 @@ import type { ToolView } from "./shared";
 
 export type Args = Record<string, unknown>;
 export type ToolContext = {
-  team?: { act(action: string, id: string, text: string): string };
+  team?: { act(action: string, id: string, text: string, files?: string): string };
   /** Typed gists beyond notes and tasks. `append` returns the new gist's number; `settled` is the long-term shared context. */
   substrate?: { append(kind: string, body: unknown): number; settled(): { seq: number }[]; cwd: string };
   signal: AbortSignal;
