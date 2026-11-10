@@ -46,7 +46,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
   function load(id: string) {
     const c = store.get(id);
     if (!c || turns.has(id)) return c;
-    if (c.board?.statuses) for (const [agent, status] of Object.entries(c.board.statuses)) if (status === "running") c.board.statuses[agent] = "stopped";
+    if (c.board?.statuses) for (const [agent, status] of Object.entries(c.board.statuses)) if (status === "running" || status === "waiting") c.board.statuses[agent] = "stopped";
     for (const m of c.messages) if (m.role === "assistant" && m.status === "streaming") c.messages = apply(c.messages, { t: "end", message: m.id, status: "stopped" });
     c.messages = c.messages.map((m): Message =>
       m.role === "assistant" ? { ...m, parts: m.parts.map((p): Part => (p.type === "tool" ? withView(p) : p)) } : m,
@@ -73,7 +73,12 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
         ? { role: "user", content: [{ type: "input_text", text: userText }, ...images.map((image_url) => ({ type: "input_image" as const, image_url, detail: "auto" as const }))] }
         : { role: "user", content: userText },
     );
-    const statuses: Record<string, string> = { "shiro-1": "running", "shiro-2": "running" };
+    const peers = ["shiro-1", "shiro-2", "shiro-3", "shiro-4"];
+    const statuses: Record<string, string> = Object.fromEntries(peers.map((agent) => [agent, "waiting"]));
+    // Only startup is ordered. A peer's claimed-and-published assignment opens the next gate.
+    const ready = peers.map(() => Promise.withResolvers<void>());
+    const unblock = () => ready.forEach((gate) => gate.resolve());
+    signal.addEventListener("abort", unblock, { once: true });
     const board = createBoard(undefined, () => {
       if (!turn.deleted) { store.save(c); broadcastBoard(); }
     });
@@ -83,6 +88,8 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
     board.state.tasks.push(
       { id: "investigate", text: "Investigate the request and propose an approach; publish findings and add concrete subtasks if useful.", done: false },
       { id: "independent-check", text: "Independently check the request, risks and evidence; verify peer work and contribute a complementary result.", done: false },
+      { id: "implementation", text: "Find and claim a distinct implementation subtask after reading peers' plans; avoid overlapping file ownership. If no implementation is needed, contribute a distinct investigation or release this task.", done: false },
+      { id: "integration-check", text: "Check integration, documentation and remaining gaps after reading peers' plans; choose complementary work and publish evidence.", done: false },
     );
     broadcastBoard();
     touch(c);
@@ -97,12 +104,22 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
       try { signal.throwIfAborted(); return await f(); } finally { release(); }
     }
 
-    async function worker(agent: string) {
+    async function worker(agent: string, started: () => void) {
+      statuses[agent] = "running";
+      if (!turn.deleted) { store.save(c); broadcastBoard(); }
       const message = crypto.randomUUID();
       const history = structuredClone(base);
       const workerEmit = (ev: Ev) => { if (!turn.deleted) emit(c, { ...ev, message }); };
       workerEmit({ t: "assistant", id: message, model: c.meta.model, agent });
-      const team = board.forAgent(agent);
+      const rawTeam = board.forAgent(agent);
+      let claimed = false;
+      const team = { act(action: string, id: string, text: string) {
+        signal.throwIfAborted();
+        const result = rawTeam.act(action, id, text);
+        if (action === "claim") claimed = true;
+        if (action === "publish" && claimed && board.state.tasks.some((t) => t.owner === agent && !t.done)) started();
+        return result;
+      } };
 
       const chat = {
         say(text: string) {
@@ -155,14 +172,27 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
         statuses[agent] = signal.aborted ? "stopped" : "error";
         workerEmit(signal.aborted ? { t: "end", status: "stopped" } : { t: "end", status: "error", error: (e as Error).message });
       } finally {
+        // A silent finish or failure must not strand later peers behind an unopened gate.
+        started();
         if (statuses[agent] === "running") statuses[agent] = "finished";
         for (const task of board.state.tasks) if (task.owner === agent && !task.done) delete task.owner;
         if (!turn.deleted) { store.save(c); broadcastBoard(); }
       }
     }
     try {
-      await Promise.allSettled([worker("shiro-1"), worker("shiro-2")]);
+      await Promise.allSettled(peers.map(async (agent, index) => {
+        if (index > 0) await ready[index - 1]!.promise;
+        if (signal.aborted) {
+          statuses[agent] = "stopped";
+          ready[index]!.resolve();
+          if (!turn.deleted) { store.save(c); broadcastBoard(); }
+          return;
+        }
+        try { await worker(agent, () => ready[index]!.resolve()); }
+        finally { ready[index]!.resolve(); }
+      }));
     } finally {
+      signal.removeEventListener("abort", unblock);
       turns.delete(c.meta.id);
       if (!turn.deleted) {
         const findings = board.state.notes.filter((n) => !n.text.startsWith("Chat: "));

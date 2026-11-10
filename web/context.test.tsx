@@ -46,3 +46,17 @@ test("empty and legacy conversations render without a board", () => {
   expect(html).toContain("まだ共有ノートはありません。");
   expect(html).toContain("最新の保存内容");
 });
+
+test("four participants show distinct identities and startup waiting status", () => {
+  const board: Board = {
+    tasks: [], notes: [{ agent: "shiro-4", text: "integration notes" }],
+    statuses: { "shiro-1": "running", "shiro-2": "waiting", "shiro-3": "waiting", "shiro-4": "waiting" },
+  };
+  const html = renderToStaticMarkup(<ContextPage board={board} running title="four peers" />);
+  for (const peer of Object.keys(board.statuses!)) expect(html).toContain(peer);
+  expect(html).toContain("開始待ち");
+  expect(html).toContain("作業中");
+  expect(html).toContain("peer-three");
+  expect(html).toContain("peer-four");
+  expect(html).toContain("integration notes");
+});

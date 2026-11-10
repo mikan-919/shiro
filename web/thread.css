@@ -145,3 +145,6 @@
 .sender.peer-two::before { background: #8c87bc; }
 .team-presence { display: flex; flex-wrap: wrap; gap: 16px; padding: 8px 0; }
 .team-presence .typing { padding: 10px 12px; }
+
+.sender.peer-three::before { background: #c28a55; }
+.sender.peer-four::before { background: #639caf; }

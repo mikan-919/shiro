@@ -120,7 +120,7 @@ function AssistantRows({ m, fresh, isLast, busy, onApprove, onReact, onRegenerat
   if (m.agent && !visible && m.status !== "error" && m.status !== "stopped") return null;
   return (
     <div className={`msg ${fresh ? "is-new" : ""}`}>
-      {m.agent && <span className={`sender ${m.agent === "shiro-2" ? "peer-two" : ""}`}>{m.agent}</span>}
+      {m.agent && <span className={`sender ${m.agent === "shiro-2" ? "peer-two" : m.agent === "shiro-3" ? "peer-three" : m.agent === "shiro-4" ? "peer-four" : ""}`}>{m.agent}</span>}
       {content.map((b) =>
         b.kind === "bubble" ? (
           <Bubble key={b.key} text={b.text} reaction={b.reaction} onReact={b.sayId ? (e) => onReact(b.sayId!, e) : undefined} />
@@ -178,7 +178,7 @@ export function Thread({ conv, known, onApprove, onReact, onEdit, onRegenerate, 
         {busy && participants.length > 0 && (
           <div className="team-presence" role="status" aria-label="参加者の状態">
             {participants.map((m) => (
-              <span key={m.id} className={`sender ${m.agent === "shiro-2" ? "peer-two" : ""}`}>
+              <span key={m.id} className={`sender ${m.agent === "shiro-2" ? "peer-two" : m.agent === "shiro-3" ? "peer-three" : m.agent === "shiro-4" ? "peer-four" : ""}`}>
                 {m.agent}
                 {m.parts.some((p) => p.type === "tool" && p.status === "awaiting") ? (
                   <span>承認待ち</span>

@@ -24,3 +24,16 @@ test("group chat keeps bubble order, names speakers and shows pending participan
   expect(html).toContain("このコマンドを実行しますか？");
   expect(html).toContain('aria-label="参加者の状態"');
 });
+
+test("four-peer chat renders each speaker color and active typing state", () => {
+  const peers = ["shiro-1", "shiro-2", "shiro-3", "shiro-4"];
+  const conv: Conversation = {
+    meta: { id: "four", title: "four peers", model: "test", effort: "medium", autoApprove: false, createdAt: 0, updatedAt: 0, running: true },
+    messages: peers.map((agent) => ({ id: agent, agent, role: "assistant", model: "test", status: "streaming", parts: [{ type: "say", id: `${agent}-say`, text: `${agent} report` }] })),
+  };
+  const html = renderToStaticMarkup(<Thread conv={conv} known={new Set()} onApprove={noop} onReact={noop} onEdit={noop} onRegenerate={noop} onImage={noop} />);
+  for (const peer of peers) expect(html).toContain(`${peer} report`);
+  expect(html).toContain("peer-three");
+  expect(html).toContain("peer-four");
+  expect(html.match(/aria-label="入力中"/g)).toHaveLength(4);
+});

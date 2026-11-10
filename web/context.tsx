@@ -17,7 +17,7 @@ export function noteKind(text: string): Exclude<Kind, "all"> {
   if (/^\[type-gap\]/i.test(text.trimStart())) return "type-gap";
   return "finding";
 }
-const statusName = (s: string) => ({ running: "作業中", finished: "終了", stopped: "停止", error: "エラー" })[s] ?? s;
+const statusName = (s: string) => ({ waiting: "開始待ち", running: "作業中", finished: "終了", stopped: "停止", error: "エラー" })[s] ?? s;
 
 /** A read-only view of the latest board, not an archive of all prior turns. */
 export function ContextPage({ board, running, title }: { board?: Board; running: boolean; title: string }) {
@@ -45,7 +45,7 @@ export function ContextPage({ board, running, title }: { board?: Board; running:
         {board?.statuses && Object.keys(board.statuses).length > 0 && (
           <div className="context-members" aria-label="参加者の状態">
             {Object.entries(board.statuses).map(([agent, status]) => (
-              <span className="context-member" key={agent}><span className={`sender ${agent === "shiro-2" ? "peer-two" : ""}`}>{agent}</span><span>{statusName(status)}</span></span>
+              <span className="context-member" key={agent}><span className={`sender ${agent === "shiro-2" ? "peer-two" : agent === "shiro-3" ? "peer-three" : agent === "shiro-4" ? "peer-four" : ""}`}>{agent}</span><span>{statusName(status)}</span></span>
             ))}
           </div>
         )}
@@ -69,7 +69,7 @@ export function ContextPage({ board, running, title }: { board?: Board; running:
           {(filter === "failure" || filter === "type-gap") && <p className="context-description">{filter === "failure" ? "[failure] として公開されたノートです。すべてのツールエラーが自動で記録されるわけではありません。" : "[type-gap] は表現の不足を報告する暫定ラベルで、採用済みのスキーマ型ではありません。"}</p>}
           {shownNotes.length ? <ol className="context-notes">{shownNotes.map((note) => (
             <li className={`context-card kind-${note.kind}`} key={`${note.i}:${note.agent}`}>
-              <div className="context-card-head"><span className={`sender ${note.agent === "shiro-2" ? "peer-two" : ""}`}>{note.agent}</span><span className="context-tag">{FILTERS.find((f) => f.id === note.kind)?.label}</span></div>
+              <div className="context-card-head"><span className={`sender ${note.agent === "shiro-2" ? "peer-two" : note.agent === "shiro-3" ? "peer-three" : note.agent === "shiro-4" ? "peer-four" : ""}`}>{note.agent}</span><span className="context-tag">{FILTERS.find((f) => f.id === note.kind)?.label}</span></div>
               <p>{note.text}</p>
             </li>
           ))}</ol> : <p className="context-empty">{notes.length ? "条件に一致するノートはありません。" : "まだ共有ノートはありません。公開されるとここに表示されます。"}</p>}
