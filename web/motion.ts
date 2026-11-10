@@ -49,12 +49,14 @@ export function useFollowBottom<S extends HTMLElement, C extends HTMLElement>({ 
   const glide = useCallback(() => {
     const el = ref.current;
     if (!el || raf.current) return;
-    if (reducedMotion()) return void (el.scrollTop = el.scrollHeight);
+    // Even the reduced-motion jump waits for a frame: glide runs from a ResizeObserver callback, and layout
+    // written there makes Chrome report "ResizeObserver loop completed with undelivered notifications".
+    const instant = reducedMotion();
     pos.current = el.scrollTop;
     let last = performance.now();
     const step = (now: number) => {
       const target = el.scrollHeight - el.clientHeight;
-      pos.current += (target - pos.current) * (1 - Math.exp(-(now - last) / tau));
+      pos.current = instant ? target : pos.current + (target - pos.current) * (1 - Math.exp(-(now - last) / tau));
       last = now;
       if (Math.abs(target - pos.current) < 0.5) {
         el.scrollTop = target;
