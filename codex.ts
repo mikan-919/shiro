@@ -30,7 +30,9 @@ export async function* respond(o: {
   });
   const stream = await client.responses.create(
     {
-      model: o.model, instructions: o.instructions, input: o.input, tools: o.tools, tool_choice: "auto", parallel_tool_calls: true,
+      model: o.model, instructions: o.instructions, input: o.input,
+      // The observer calls without tools; an empty tool list is left out rather than sent.
+      ...(o.tools.length ? { tools: o.tools, tool_choice: "auto" as const, parallel_tool_calls: true } : {}),
       reasoning: { effort: o.effort, summary: "auto" },
       // The Codex backend rejects store: true; encrypted reasoning keeps the chain of thought across requests instead.
       store: false, stream: true, include: ["reasoning.encrypted_content"], prompt_cache_key: o.session,

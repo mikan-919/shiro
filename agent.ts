@@ -8,6 +8,7 @@ import { available, describe, parseArgs, summarize } from "./tools";
 import { firstLine } from "./toolkit";
 import { instructions, teamInstructions } from "./instructions";
 import { createToolRunner } from "./tool-runner";
+import { observeTurn } from "./observer";
 import { apply, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type Settings, type ToolPart } from "./shared";
 
 type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void>; deleted?: boolean; followup?: (text: string, images: string[]) => void };
@@ -68,7 +69,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
     const itemIndex = c.items.length;
     if (!c.messages.length && !rewound) c.meta.title = text.replace(/\s+/g, " ").trim().slice(0, 40) || "画像";
     const userId = crypto.randomUUID();
-    const log = (agent: string, kind: string, body: unknown) => store.append({ conv: c.meta.id, turn: userId, agent, kind, body });
+    const log = (agent: string, kind: string, body: unknown): number => store.append({ conv: c.meta.id, turn: userId, agent, kind, body });
     log("user", "user", { text, images: images.length });
     emit(c, { t: "user", msg: { id: userId, role: "user", text, images, itemIndex } });
     // The model sees the message id (to react to it) and what the user did since its last turn.
@@ -158,6 +159,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
 
       const call = createToolRunner({
         message, signal, emit: workerEmit, chat, team, settings: () => c.meta,
+        substrate: { append: (kind, body) => log(agent, kind, body), settled: () => store.settled(cwd), cwd },
         approvals: turn.approvals, cwd, task: () => requests.join("\n\nFollow-up from user:\n"), exclusive,
         onCall: (data) => log(agent, "tool", data),
       });
@@ -168,7 +170,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
           receive();
           const calls: ResponseFunctionToolCall[] = [];
           const events = response({
-            model: c.meta.model, effort: c.meta.effort, instructions: instructions(cwd) + teamInstructions(agent, board.snapshot(), statuses), input: history,
+            model: c.meta.model, effort: c.meta.effort, instructions: instructions(cwd) + teamInstructions(agent, board.snapshot(), statuses, store.settled(cwd)), input: history,
             tools: available().map((t) => t.def), session: `${c.meta.id}:${agent}`, signal,
           });
           for await (const ev of events) {
@@ -216,6 +218,8 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
         const findings = board.state.notes.filter((n) => !n.text.startsWith("Chat: "));
         if (findings.length) c.items.push({ role: "assistant", content: `Team findings (reported by peers; verify before reuse): ${JSON.stringify(findings)}` });
         touch(c);
+        // The turn is over for the user; the observer reads its episode afterwards, off the turn's clock.
+        void observeTurn(c.meta.id, userId, c.meta.model, response);
       }
     }
   }

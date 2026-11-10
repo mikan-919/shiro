@@ -11,6 +11,7 @@ type RunnerOptions = {
   emit: (ev: Ev) => void;
   chat: ToolContext["chat"];
   team: ToolContext["team"];
+  substrate?: ToolContext["substrate"];
   settings: () => Pick<Settings, "model" | "autoApprove">;
   approvals: Map<string, (ok: boolean) => void>;
   cwd: string;
@@ -21,7 +22,7 @@ type RunnerOptions = {
 };
 
 /** One runner per worker; approvals and the side-effect queue remain owned by the turn. */
-export function createToolRunner({ message, signal, emit, chat, team, settings, approvals, cwd, task, exclusive, onCall }: RunnerOptions) {
+export function createToolRunner({ message, signal, emit, chat, team, substrate, settings, approvals, cwd, task, exclusive, onCall }: RunnerOptions) {
   async function approved(id: string, request: string, callSignal: AbortSignal) {
     callSignal.throwIfAborted();
     if (settings().autoApprove && jevEnabled()) {
@@ -52,7 +53,7 @@ export function createToolRunner({ message, signal, emit, chat, team, settings, 
     const a = parsed ?? {};
     const tool = usable(name);
     const ctx: ToolContext = {
-      signal: callSignal, model: settings().model, chat, team,
+      signal: callSignal, model: settings().model, chat, team, substrate,
       callTool: async (innerName, args, executionSignal) => {
         callSignal.throwIfAborted();
         if (innerName === "execute_code") throw new Error("recursive execute_code is not allowed");

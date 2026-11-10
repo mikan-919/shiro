@@ -25,8 +25,10 @@ async function until(f: () => boolean) {
     await Bun.sleep(5);
   }
 }
-const setup = (response: typeof respond) => {
+/** `observer` answers the post-turn observer; by default it says nothing, so peer mocks never see that session. */
+const setup = (peers: typeof respond, observer: typeof respond = async function* () {}) => {
   const pushes: Push[] = [];
+  const response: typeof respond = (o) => (o.session.endsWith(":observer") ? observer(o) : peers(o));
   const agent = createAgent({ publish: (p) => pushes.push(p), cwd: dir, defaultModel: "test", response });
   const conv = agent.create({ autoApprove: false });
   return { agent, id: conv.id, pushes };
@@ -397,7 +399,7 @@ test("the substrate log keeps every coordination event after the board resets an
     await until(() => !agent.open(id)!.meta.running);
   }
   agent.remove(id);
-  const log = store.substrate(id);
+  const log = store.substrate(id).filter((g) => g.agent !== "observer");
   expect(log.map((g) => `${g.agent}:${g.kind}`)).toEqual(Array(2).fill(["user:user", "shiro-1:start", "shiro-1:publish", "shiro-1:publish", "shiro-1:tool"]).flat());
   expect(log.filter((g) => (g.body as { text?: string }).text?.startsWith("[type-gap]"))).toHaveLength(2);
   expect(new Set(log.map((g) => g.turn)).size).toBe(2);
@@ -453,7 +455,7 @@ test("the report counts started peers, queued tasks and labelled notes per turn"
     g("t1", "shiro-2", "publish", " [Type-Gap] wanted a promise"), g("t1", "shiro-1", "publish", "[failure] exit 1"), g("t1", "shiro-1", "publish", "Chat: [type-gap] quoted"),
     g("t2", "user", "user"), g("t2", "shiro-1", "start"), g("t2", "shiro-1", "tool"),
   ]);
-  expect(rows.map((t) => [t.peers.size, t.add, t.tool, t["type-gap"], t.failure])).toEqual([[2, 2, 0, 1, 1], [1, 0, 1, 0, 0]]);
+  expect(rows.map((t) => [t.peers.size, t.add, t.tool, t.gap, t.failure])).toEqual([[2, 2, 0, 1, 1], [1, 0, 1, 0, 0]]);
 });
 
 test("follow-ups during a final response persist immediately and trigger another request with text and images", async () => {
@@ -578,4 +580,86 @@ test("a follow-up accepted while the scheduler settles still gets a responder", 
   expect(agent.open(id)!.messages.filter((m) => m.role === "assistant")).toHaveLength(2);
   expect(agent.open(id)!.board.statuses?.["shiro-1"]).toBe("finished");
   agent.remove(id);
+});
+
+test("the observer reads a finished turn once, appends cited type-gaps, and skips turns without gists", async () => {
+  const { parseGaps } = await import("./observer");
+  const seen: string[] = [];
+  const calls = new Map<string, number>();
+  let chat = false;
+  const peers: typeof respond = async function* (o) {
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (!o.session.endsWith("shiro-1")) return;
+    if (chat) { if (!n) yield item("send_message", { text: "hi" }); return; }
+    if (n === 0) yield item("team", { action: "add", id: "", text: "UI. owner files: web/app.tsx" });
+    else if (n === 1) yield item("report_type_gap", { wanted: "file ownership", distortion: "wrote it in the task text", cost: "", evidence: "UI task" });
+  };
+  const observer: typeof respond = async function* (o) {
+    const record = (o.input[0] as { content: string }).content;
+    seen.push(record);
+    expect(o.effort).toBe("low");
+    const add = /gist #(\d+) shiro-1 task add/.exec(record)![1];
+    const event = /event #(\d+) user user/.exec(record)![1];
+    yield { type: "text", text: "```json\n" + JSON.stringify({ gaps: [
+      { wanted: "who owns which files", distortion: "free text in the task", cost: "unmeasured", evidence: [Number(add), 999999] },
+      { wanted: "cites no gist", distortion: "x", cost: "unmeasured", evidence: [Number(event)] },
+    ] }) + "\n```" };
+  };
+  const { agent, id } = setup(peers, observer);
+  agent.send(id, "work", []);
+  await until(() => store.substrate(id).some((r) => r.kind === "observe"));
+  const rows = store.substrate(id);
+  const gaps = rows.filter((r) => r.kind === "type-gap").map((r) => r.body as { source: string; evidence: string[]; cost: string });
+  expect(gaps.map((g) => g.source)).toEqual(["self", "observer"]);
+  expect(gaps[0]).toMatchObject({ cost: "unmeasured", evidence: ["UI task"] });
+  expect(gaps[1]!.evidence).toEqual([`#${rows.find((r) => r.kind === "add")!.seq}`]); // Unknown lines are dropped.
+  expect(rows.find((r) => r.kind === "observe")!.body).toEqual({ gaps: 1 });
+  expect(seen).toHaveLength(1);
+  expect(seen[0]).toContain("shiro-1 type-gap: wanted file ownership"); // It sees the self-report, so it need not repeat it.
+  expect(rows.every((r) => r.v === 1)).toBe(true);
+  chat = true;
+  calls.clear();
+  agent.send(id, "chat", []);
+  await until(() => !agent.open(id)!.meta.running);
+  await Bun.sleep(20);
+  expect(seen).toHaveLength(1); // A bubble is not a gist: no model call for the chat turn.
+  expect(() => parseGaps("not json", rows)).toThrow();
+  agent.remove(id);
+});
+
+test("settled facts reach later conversations in the same directory until a peer retracts them", async () => {
+  const prompts: string[] = [];
+  const outputs: string[] = [];
+  const script: [string, object][] = [];
+  const peers: typeof respond = async function* (o) {
+    prompts.push(o.instructions);
+    const last = o.input.at(-1) as { output?: string };
+    if (last.output) outputs.push(last.output);
+    const next = script.shift();
+    if (next) yield item(...next);
+  };
+  const run = async (...calls: [string, object][]) => {
+    const { agent, id } = setup(peers);
+    script.push(...calls);
+    agent.send(id, "go", []);
+    await until(() => !agent.open(id)!.meta.running);
+    agent.remove(id);
+  };
+  await run(
+    ["settle", { action: "add", kind: "environment", scope: "here", text: "python3 is not installed", target: "" }],
+    ["settle", { action: "add", kind: "guess", scope: "here", text: "maybe", target: "" }],
+    ["settle", { action: "add", kind: "policy", scope: "anywhere", text: "x".repeat(301), target: "" }],
+    ["settle", { action: "retract", kind: "", scope: "", text: "typo", target: "999999" }],
+  );
+  const seq = /settled #(\d+)/.exec(outputs[0]!)![1]!;
+  expect(outputs.slice(1).every((o) => o.startsWith("error: "))).toBe(true);
+  expect(store.settled(dir).map((s) => s.body)).toEqual([{ text: "python3 is not installed", kind: "environment", cwd: dir }]);
+  expect(store.settled("/elsewhere")).toEqual([]);
+  prompts.length = 0;
+  await run(["settle", { action: "retract", kind: "", scope: "", text: "installed python3 and ran it", target: seq }]);
+  expect(prompts[0]).toContain(`#${seq} [environment] python3 is not installed`); // A new conversation starts with it.
+  expect(prompts.at(-1)).not.toContain("python3 is not installed");
+  expect(store.settled(dir)).toEqual([]);
+  expect(store.substrate().filter((r) => r.kind === "settled" && r.seq === Number(seq))).toHaveLength(1); // Retracted, not deleted.
 });

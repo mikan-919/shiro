@@ -2,7 +2,7 @@ import type { ToolStatus, ToolView } from "./shared";
 import { def, firstLine, str, toolDeclaration, type Args, type Tool } from "./toolkit";
 import { codeModeEnabled, executeCode } from "./codemode";
 import { react, sendMessage } from "./chat";
-import { teamTool } from "./team";
+import { gapTool, settleTool, teamTool } from "./team";
 import { searchTool } from "./search";
 import { fetchTool } from "./fetch";
 import { fileTools } from "./filesystem";
@@ -134,7 +134,7 @@ const executeCodeTool: Tool = {
   summary: (_, out) => out === undefined ? undefined : firstLine(out),
 };
 
-const ALL = [sendMessage, react, readFile, ...fileTools, writeFile, editFile, bash, searchTool, fetchTool, teamTool, executeCodeTool];
+const ALL = [sendMessage, react, readFile, ...fileTools, writeFile, editFile, bash, searchTool, fetchTool, teamTool, gapTool, settleTool, executeCodeTool];
 
 const enabled = (t: Tool) => t.enabled?.() ?? true;
 export const available = () => ALL.filter(enabled);

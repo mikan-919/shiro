@@ -27,20 +27,36 @@ if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().so
 
 // The substrate: every coordination event, appended and never rewritten or evicted. Rows outlive board resets,
 // edits, regeneration and conversation deletion, so replay can read them later. `v` is the schema version the
-// row was written under; bump it when a record shape is added, and keep reading old ones.
-export const SUBSTRATE_VERSION = 0;
+// row was written under; bump it when a gist type is added, and keep reading old ones (docs/adr/0002).
+// v0: note (publish) and task (add, claim, complete, release). v1 adds type-gap, settled and retract.
+// Every other kind is an episode event, not a gist.
+export const SUBSTRATE_VERSION = 1;
 db.run(`CREATE TABLE IF NOT EXISTS substrate (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, v INTEGER NOT NULL,
   conv TEXT NOT NULL, turn TEXT NOT NULL, agent TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL)`);
 
-export type Gist = { seq: number; at: number; v: number; conv: string; turn: string; agent: string; kind: string; body: unknown };
-export function append(g: { conv: string; turn: string; agent: string; kind: string; body: unknown }) {
-  db.query("INSERT INTO substrate (at, v, conv, turn, agent, kind, body) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(Date.now(), SUBSTRATE_VERSION, g.conv, g.turn, g.agent, g.kind, JSON.stringify(g.body));
+export type SubstrateRow = { seq: number; at: number; v: number; conv: string; turn: string; agent: string; kind: string; body: unknown };
+const GIST_KINDS = new Set(["publish", "add", "claim", "complete", "release", "type-gap", "settled", "retract"]);
+/** A bubble mirrored into the notes ("Chat: ...") was written for the user, so it is not a gist. */
+export const isGist = (r: SubstrateRow) => GIST_KINDS.has(r.kind) && !(r.kind === "publish" && String((r.body as { text?: string }).text).startsWith("Chat: "));
+
+type Raw = Omit<SubstrateRow, "body"> & { body: string };
+const parse = (r: Raw): SubstrateRow => ({ ...r, body: JSON.parse(r.body) });
+/** Returns the new row's seq, which is how later gists refer to it. */
+export function append(g: { conv: string; turn: string; agent: string; kind: string; body: unknown }): number {
+  return Number(db.query("INSERT INTO substrate (at, v, conv, turn, agent, kind, body) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(Date.now(), SUBSTRATE_VERSION, g.conv, g.turn, g.agent, g.kind, JSON.stringify(g.body)).lastInsertRowid);
 }
-export function substrate(conv?: string): Gist[] {
-  return db.query<Omit<Gist, "body"> & { body: string }, [string | null]>("SELECT * FROM substrate WHERE ?1 IS NULL OR conv = ?1 ORDER BY seq").all(conv ?? null)
-    .map((r) => ({ ...r, body: JSON.parse(r.body) }));
+export function substrate(conv?: string): SubstrateRow[] {
+  return db.query<Raw, [string | null]>("SELECT * FROM substrate WHERE ?1 IS NULL OR conv = ?1 ORDER BY seq").all(conv ?? null).map(parse);
+}
+
+export type Settled = { text: string; kind: "environment" | "policy"; cwd: string | null };
+/** The long-term shared context for one working directory: settled gists that no later gist retracts. */
+export function settled(cwd: string): (SubstrateRow & { body: Settled })[] {
+  const rows = db.query<Raw, []>(`SELECT * FROM substrate s WHERE kind = 'settled' AND NOT EXISTS (
+    SELECT 1 FROM substrate r WHERE r.kind = 'retract' AND json_extract(r.body, '$.target') = s.seq) ORDER BY seq`).all().map(parse);
+  return (rows as (SubstrateRow & { body: Settled })[]).filter((r) => r.body.cwd === null || r.body.cwd === cwd);
 }
 
 type Row = { id: string; title: string; model: string; effort: Effort; created_at: number; updated_at: number; auto_approve: number };
