@@ -14,6 +14,10 @@ if (oldDB === undefined) delete process.env.SHIRO_DB; else process.env.SHIRO_DB 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const item = (name: string, args: object): CodexEvent => ({ type: "item", item: { type: "function_call", call_id: "same-id", name, arguments: JSON.stringify(args) } });
+/** The queue starts empty and peers join only for unclaimed tasks, so the first peer queues one task per peer. */
+function* seed(o: { session: string }, n = 4) {
+  if (o.session.endsWith("shiro-1")) for (let i = 0; i < n; i++) yield item("team", { action: "add", id: "", text: `part ${i}` });
+}
 async function until(f: () => boolean) {
   const deadline = Date.now() + 3000;
   while (!f()) {
@@ -44,14 +48,16 @@ test("four peers start after prior ownership announcement, then overlap and pres
         expect(o.instructions).toContain(`Chat: ${previous} assigned`);
         expect(o.instructions).toContain(`"owner":"${previous}"`);
       }
+      yield* seed(o);
       yield item("team", { action: "claim", id: "", text: "" });
     } else if (n === 1) {
       const task = JSON.parse((o.input.at(-1) as { output: string }).output);
       expect(task.owner).toBe(peer);
       tasks.set(peer, task.id);
+      // Hold every peer until all four own a task: a finished peer releases its task for the next claim.
+      if (tasks.size === 4) gate.resolve();
       yield item("send_message", { text: `${peer} assigned` });
     } else if (n === 2) {
-      if (started.length === 4) gate.resolve();
       await gate.promise;
     }
   };
@@ -83,7 +89,7 @@ test("approval IDs are isolated and stopping resolves all pending approvals", as
   const response: typeof respond = async function* (o) {
     const n = calls.get(o.session) ?? 0;
     calls.set(o.session, n + 1);
-    if (n === 0) yield item("team", { action: "claim", id: "", text: "" });
+    if (n === 0) { yield* seed(o); yield item("team", { action: "claim", id: "", text: "" }); }
     if (n === 1) yield item("team", { action: "publish", id: "", text: "assigned approval test" });
     if (n === 2) yield item("bash", { command: "printf should-not-run" });
   };
@@ -121,10 +127,12 @@ test("deletion during generation never resurrects the conversation", async () =>
 test("one peer failing does not cancel the other", async () => {
   const calls = new Map<string, number>();
   const response: typeof respond = async function* (o) {
-    if (o.session.endsWith("shiro-1")) throw new Error("peer failure");
     const n = calls.get(o.session) ?? 0;
     calls.set(o.session, n + 1);
-    if (!n) yield item("send_message", { text: "still working" });
+    if (o.session.endsWith("shiro-1")) {
+      if (n) throw new Error("peer failure");
+      yield* seed(o);
+    } else if (!n) yield item("send_message", { text: "still working" });
   };
   const { agent, id } = setup(response);
   agent.send(id, "continue", []);
@@ -140,7 +148,7 @@ test("shared workspace side effects execute serially even when all four are appr
   const response: typeof respond = async function* (o) {
     const n = calls.get(o.session) ?? 0;
     calls.set(o.session, n + 1);
-    if (n === 0) yield item("team", { action: "claim", id: "", text: "" });
+    if (n === 0) { yield* seed(o); yield item("team", { action: "claim", id: "", text: "" }); }
     if (n === 1) yield item("team", { action: "publish", id: "", text: "assigned serial test" });
     if (n === 2) {
       const peer = o.session.split(":").at(-1)!;
@@ -188,7 +196,7 @@ test("runaway tool loops hit a bounded limit", async () => {
   const { agent, id } = setup(response);
   agent.send(id, "loop", []);
   await until(() => !agent.open(id)!.meta.running);
-  expect(calls).toBe(160);
+  expect(calls).toBe(40); // No task was queued, so only the first peer ever runs.
   expect(store.get(id)!.messages.filter((m) => m.role === "assistant").every((m) => m.role === "assistant" && m.status === "error" && m.error?.includes("40"))).toBe(true);
   agent.remove(id);
 });
@@ -199,7 +207,7 @@ test("shared board snapshots stream task, note and status updates and remain imm
   const response: typeof respond = async function* (o) {
     const n = calls.get(o.session) ?? 0;
     calls.set(o.session, n + 1);
-    if (n === 0) yield item("team", { action: "claim", id: "", text: "" });
+    if (n === 0) { yield* seed(o); yield item("team", { action: "claim", id: "", text: "" }); }
     if (n === 1) {
       tasks.set(o.session, JSON.parse((o.input.at(-1) as { output: string }).output).id);
       yield item("team", { action: "publish", id: "", text: "[failure] attempted check; observed error; cause unknown" });
@@ -231,7 +239,7 @@ test("peer bubbles reach the next prompt via shared context without leaking priv
     const n = calls.get(o.session) ?? 0;
     calls.set(o.session, n + 1);
     if (o.session.endsWith("shiro-1")) {
-      if (n === 0) yield item("send_message", { text: "peer evidence ready" });
+      if (n === 0) { yield* seed(o); yield item("send_message", { text: "peer evidence ready" }); }
       else said.resolve();
     } else if (n === 0) {
       // The first prompt was already taken; only the NEXT request can see this note.
@@ -295,11 +303,11 @@ test("publish before claim, claim alone and publishing after release do not star
     if (!n) started.push(peer);
     if (peer !== "shiro-1") { nextStarted.resolve(); return; }
     if (n <= 5) expect(started).toEqual(["shiro-1"]);
-    if (n === 0) yield item("team", { action: "publish", id: "", text: "before claim" });
-    else if (n === 1) yield item("team", { action: "claim", id: "investigate", text: "" });
-    else if (n === 2) yield item("team", { action: "release", id: "investigate", text: "" });
+    if (n === 0) { yield* seed(o, 2); yield item("team", { action: "publish", id: "", text: "before claim" }); }
+    else if (n === 1) yield item("team", { action: "claim", id: "", text: "" });
+    else if (n === 2) yield item("team", { action: "release", id: JSON.parse((o.input.at(-1) as { output: string }).output).id, text: "" });
     else if (n === 3) yield item("team", { action: "publish", id: "", text: "no longer owned" });
-    else if (n === 4) yield item("team", { action: "claim", id: "investigate", text: "" });
+    else if (n === 4) yield item("team", { action: "claim", id: "", text: "" });
     else if (n === 5) yield item("team", { action: "publish", id: "", text: "assignment ready" });
     else await nextStarted.promise;
   };
@@ -318,7 +326,8 @@ test("stopping before assignment sharing never starts the three waiting peers", 
     const peer = o.session.split(":").at(-1)!;
     if (!firstClaimed) {
       started.push(peer);
-      yield item("team", { action: "claim", id: "investigate", text: "" });
+      yield* seed(o);
+      yield item("team", { action: "claim", id: "", text: "" });
     } else throw new Error("waiting peer unexpectedly started");
     // This generator's next invocation occurs after the claim was executed.
   };
@@ -369,4 +378,44 @@ test("the substrate log keeps every coordination event after the board resets an
   expect(new Set(log.map((g) => g.turn)).size).toBe(2);
   expect(log.every((g) => g.v === store.SUBSTRATE_VERSION)).toBe(true);
   expect(log[3]!.body).toMatchObject({ name: "send_message", output: expect.any(String) });
+});
+
+test("peers start only for unclaimed tasks: chat runs one peer, and a task added later wakes one more", async () => {
+  const started: string[] = [];
+  const calls = new Map<string, number>();
+  const second = Promise.withResolvers<void>();
+  let chat = true;
+  const response: typeof respond = async function* (o) {
+    const peer = o.session.split(":").at(-1)!;
+    const n = calls.get(peer) ?? 0;
+    calls.set(peer, n + 1);
+    if (!n) started.push(peer);
+    if (peer !== "shiro-1") {
+      if (!n) yield item("team", { action: "claim", id: "", text: "" });
+      else second.resolve();
+      return;
+    }
+    if (chat) { if (!n) yield item("send_message", { text: "hi" }); return; }
+    if (n === 0) yield item("team", { action: "add", id: "", text: "mine" });
+    else if (n === 1) yield item("team", { action: "claim", id: "", text: "" });
+    else if (n === 2) yield item("team", { action: "publish", id: "", text: "assignment ready" });
+    else if (n === 3) {
+      // The gate is open, but nothing is unclaimed: no one else may be running yet.
+      await Bun.sleep(20);
+      expect(started).toEqual(["shiro-1"]);
+      yield item("team", { action: "add", id: "", text: "extra" });
+    } else await second.promise;
+  };
+  const { agent, id } = setup(response);
+  agent.send(id, "chat", []);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(started).toEqual(["shiro-1"]);
+  expect(agent.open(id)!.board.statuses).toEqual({ "shiro-1": "finished", "shiro-2": "idle", "shiro-3": "idle", "shiro-4": "idle" });
+  started.length = 0;
+  calls.clear();
+  chat = false;
+  agent.send(id, "work", []);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(started).toEqual(["shiro-1", "shiro-2"]);
+  agent.remove(id);
 });

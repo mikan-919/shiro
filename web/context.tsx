@@ -17,7 +17,7 @@ export function noteKind(text: string): Exclude<Kind, "all"> {
   if (/^\[type-gap\]/i.test(text.trimStart())) return "type-gap";
   return "finding";
 }
-const statusName = (s: string) => ({ waiting: "開始待ち", running: "作業中", finished: "終了", stopped: "停止", error: "エラー" })[s] ?? s;
+const statusName = (s: string) => ({ waiting: "開始待ち", idle: "出番なし", running: "作業中", finished: "終了", stopped: "停止", error: "エラー" })[s] ?? s;
 
 /** A read-only view of the latest board, not an archive of all prior turns. */
 export function ContextPage({ board, running, title }: { board?: Board; running: boolean; title: string }) {

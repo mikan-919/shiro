@@ -77,22 +77,25 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
     );
     const peers = ["shiro-1", "shiro-2", "shiro-3", "shiro-4"];
     const statuses: Record<string, string> = Object.fromEntries(peers.map((agent) => [agent, "waiting"]));
-    // Only startup is ordered. A peer's claimed-and-published assignment opens the next gate.
+    // Only startup is ordered. A peer's claimed-and-published assignment opens the next gate, and the next peer
+    // then starts only while an unclaimed task exists: headcount follows the work, not the roster.
     const ready = peers.map(() => Promise.withResolvers<void>());
-    const unblock = () => ready.forEach((gate) => gate.resolve());
+    let wake = Promise.withResolvers<void>();
+    const poke = () => { wake.resolve(); wake = Promise.withResolvers<void>(); };
+    let active = 0;
+    const unblock = () => { ready.forEach((gate) => gate.resolve()); poke(); };
     signal.addEventListener("abort", unblock, { once: true });
     const board = createBoard(undefined, () => {
       if (!turn.deleted) { store.save(c); broadcastBoard(); }
+      poke();
     });
+    // A task its owner left unfinished stays claimable by running peers but does not start a fresh one:
+    // otherwise each peer that forgets to complete its task would hand the same work to the next.
+    const abandoned = new Set<string>();
+    const free = () => board.state.tasks.some((t) => !t.done && !t.owner && !abandoned.has(t.id));
     const broadcastBoard = () => emit(c, { t: "board", board: structuredClone(board.state) });
     board.state.statuses = statuses;
     c.board = board.state;
-    board.state.tasks.push(
-      { id: "investigate", text: "Investigate the request and propose an approach; publish findings and add concrete subtasks if useful.", done: false },
-      { id: "independent-check", text: "Independently check the request, risks and evidence; verify peer work and contribute a complementary result.", done: false },
-      { id: "implementation", text: "Find and claim a distinct implementation subtask after reading peers' plans; avoid overlapping file ownership. If no implementation is needed, contribute a distinct investigation or release this task.", done: false },
-      { id: "integration-check", text: "Check integration, documentation and remaining gaps after reading peers' plans; choose complementary work and publish evidence.", done: false },
-    );
     broadcastBoard();
     touch(c);
     const base = structuredClone(c.items);
@@ -108,6 +111,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
 
     async function worker(agent: string, started: () => void) {
       statuses[agent] = "running";
+      active++;
       if (!turn.deleted) { store.save(c); broadcastBoard(); }
       const message = crypto.randomUUID();
       const history = structuredClone(base);
@@ -183,15 +187,20 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
         // A silent finish or failure must not strand later peers behind an unopened gate.
         started();
         if (statuses[agent] === "running") statuses[agent] = "finished";
-        for (const task of board.state.tasks) if (task.owner === agent && !task.done) delete task.owner;
+        for (const task of board.state.tasks) if (task.owner === agent && !task.done) { delete task.owner; abandoned.add(task.id); }
         if (!turn.deleted) { store.save(c); broadcastBoard(); }
+        active--;
+        poke();
       }
     }
     try {
       await Promise.allSettled(peers.map(async (agent, index) => {
-        if (index > 0) await ready[index - 1]!.promise;
-        if (signal.aborted) {
-          statuses[agent] = "stopped";
+        if (index > 0) {
+          await ready[index - 1]!.promise;
+          while (!signal.aborted && !free() && active > 0) await wake.promise;
+        }
+        if (signal.aborted || (index > 0 && !free())) {
+          statuses[agent] = signal.aborted ? "stopped" : "idle";
           ready[index]!.resolve();
           if (!turn.deleted) { store.save(c); broadcastBoard(); }
           return;
