@@ -3,10 +3,14 @@ import type { ResponseFunctionToolCall, ResponseInputItem } from "openai/resourc
 import * as store from "./store";
 import { respond } from "./codex";
 import { available, describe, errorOutput, parseArgs, summarize, usable } from "./tools";
+import { firstLine } from "./toolkit";
 import { jevEnabled, judge } from "./approve";
 import { apply, assistantText, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type Settings, type ToolPart } from "./shared";
 
 type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void> };
+
+/** The id the model sees for a user message: short enough to quote back to the react tool. */
+const shortId = (id: string) => id.replace(/-/g, "").slice(0, 8);
 
 /** Fills in the view of a tool call stored before calls carried one. */
 function withView(p: ToolPart): ToolPart {
@@ -18,11 +22,15 @@ function withView(p: ToolPart): ToolPart {
 export function createAgent({ publish, cwd, defaultModel }: { publish: (p: Push) => void; cwd: string; defaultModel: string }) {
   const turns = new Map<string, Turn>();
   const seqs = new Map<string, number>();
+  // ponytail: in memory, so reactions made just before a restart are not told to the model; persist if that matters
+  const notes = new Map<string, string[]>();
 
   const view = (m: ConvMeta): ConvView => ({ ...m, running: turns.has(m.id) });
   const instructions = () => `You are shiro, a coding and everyday agent running on the user's own machine in ${cwd}.
-Use the tools to inspect and change files and run commands.
-Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language. Use Markdown. Be concise.`;
+You and the user talk in a messaging app. The user sees only what you send with send_message; anything else you write stays private.
+Send short messages like texting, and send one before long work so the user knows what you are doing. React to the user's messages with react when it feels natural.
+Each user message starts with its id, like [#1a2b3c4d]. Use the tools to inspect and change files and run commands.
+Today is ${new Date().toISOString().slice(0, 10)}. Write in the user's language.`;
 
   function emit(c: store.Conv, ev: Ev) {
     c.messages = apply(c.messages, ev);
@@ -58,14 +66,27 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
     signal.addEventListener("abort", () => turn.approvals.forEach((resolve) => resolve(false)));
     const itemIndex = c.items.length;
     if (!c.messages.length && !rewound) c.meta.title = text.replace(/\s+/g, " ").trim().slice(0, 40) || "画像";
-    emit(c, { t: "user", msg: { id: crypto.randomUUID(), role: "user", text, images, itemIndex } });
+    const userId = crypto.randomUUID();
+    emit(c, { t: "user", msg: { id: userId, role: "user", text, images, itemIndex } });
+    // The model sees the message id (to react to it) and what the user did since its last turn.
+    const userText = [...(notes.get(c.meta.id) ?? []), `[#${shortId(userId)}] ${text}`].join("\n");
+    notes.delete(c.meta.id);
     c.items.push(
       images.length
-        ? { role: "user", content: [{ type: "input_text", text }, ...images.map((image_url) => ({ type: "input_image" as const, image_url, detail: "auto" as const }))] }
-        : { role: "user", content: text },
+        ? { role: "user", content: [{ type: "input_text", text: userText }, ...images.map((image_url) => ({ type: "input_image" as const, image_url, detail: "auto" as const }))] }
+        : { role: "user", content: userText },
     );
     emit(c, { t: "assistant", id: crypto.randomUUID(), model: c.meta.model });
     touch(c);
+
+    const chat = {
+      say: (text: string) => emit(c, { t: "say", id: crypto.randomUUID(), text }),
+      react(messageId: string, emoji: string | null) {
+        const m = c.messages.find((x) => x.role === "user" && shortId(x.id) === messageId);
+        if (m) emit(c, { t: "react", target: m.id, emoji });
+        return !!m;
+      },
+    };
 
     async function approved(id: string, request: string) {
       if (c.meta.autoApprove && jevEnabled()) {
@@ -85,10 +106,20 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
     async function call({ call_id: id, name, arguments: json }: ResponseFunctionToolCall): Promise<string> {
       const parsed = parseArgs(json);
       const a = parsed ?? {};
+      const tool = usable(name);
+      const ctx = { signal, model: c.meta.model, chat };
+      if (tool?.silent) {
+        try {
+          if (!parsed) throw new Error("arguments are not a JSON object");
+          return await tool.run(a, ctx);
+        } catch (e) {
+          if (signal.aborted) throw e;
+          return errorOutput((e as Error).message);
+        }
+      }
       const view = describe(name, a);
       emit(c, { t: "tool", id, name, args: json, view, summary: summarize(name, a, "running") });
       try {
-        const tool = usable(name);
         if (!tool) throw new Error(`unknown tool ${name}`);
         if (!parsed) throw new Error("arguments are not a JSON object");
         if (view.request !== undefined && !(await approved(id, view.request))) {
@@ -96,7 +127,7 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
           return "user denied this command";
         }
         emit(c, { t: "tool_status", id, status: "running" });
-        const output = await tool.run(a, { signal, model: c.meta.model });
+        const output = await tool.run(a, ctx);
         emit(c, { t: "tool_status", id, status: "done", output, summary: summarize(name, a, "done", output) });
         return output;
       } catch (e) {
@@ -166,6 +197,7 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
     remove(id: string) {
       turns.get(id)?.ctl.abort();
       seqs.delete(id);
+      notes.delete(id);
       store.remove(id);
       publish({ type: "deleted", id });
     },
@@ -187,6 +219,19 @@ Today is ${new Date().toISOString().slice(0, 10)}. Reply in the user's language.
     },
 
     stop: (id: string) => turns.get(id)?.ctl.abort(),
+
+    /** The user reacting to one of the agent's bubbles. The model hears about it with the next message. */
+    react(id: string, target: string, emoji: string | null): boolean {
+      const c = load(id);
+      const bubble = c?.messages.flatMap((m) => (m.role === "assistant" ? m.parts : [])).find((p) => p.type === "say" && p.id === target);
+      if (!c || bubble?.type !== "say") return false;
+      emit(c, { t: "react", target, emoji });
+      store.save(c);
+      const quote = firstLine(bubble.text).slice(0, 40);
+      const note = emoji ? `(ユーザーがあなたのメッセージ「${quote}」に ${emoji} でリアクションしました)` : `(ユーザーがあなたのメッセージ「${quote}」へのリアクションを取り消しました)`;
+      notes.set(id, [...(notes.get(id) ?? []), note]);
+      return true;
+    },
 
     approve(id: string, call: string, ok: boolean): boolean {
       const resolve = turns.get(id)?.approvals.get(call);

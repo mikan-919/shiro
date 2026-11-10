@@ -194,6 +194,7 @@ export function useLive(say: (msg: string) => void) {
     update: (body: Partial<Settings>) => id && call(api(`/api/conversations/${id}`, body, "PATCH")),
     stop: () => id && call(api(`/api/conversations/${id}/stop`, {})),
     approve: (callId: string, ok: boolean) => id && call(api(`/api/conversations/${id}/approve`, { call: callId, ok })),
+    react: (bubble: string, emoji: string | null) => id && call(api(`/api/conversations/${id}/react`, { target: bubble, emoji })),
     rename: (cid: string, title: string) => call(api(`/api/conversations/${cid}`, { title }, "PATCH")),
     remove: (cid: string) => call(api(`/api/conversations/${cid}`, undefined, "DELETE")),
     logout: () => call(api("/api/logout", {})),

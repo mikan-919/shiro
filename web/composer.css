@@ -1,5 +1,6 @@
 .picker { position: relative; }
 .picker-btn {
+  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -15,7 +16,7 @@
 .picker-pop { right: 0; width: 272px; overflow-y: auto; }
 .picker-pop.up { bottom: calc(100% + 8px); transform-origin: bottom right; }
 .picker-pop.down { top: calc(100% + 8px); transform-origin: top right; }
-@media (max-width: 480px) { .picker-effort { display: none; } }
+@media (max-width: 480px) { .picker-model, .picker-effort { display: none; } }
 
 .segmented { --gap: 2px; display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: var(--gap); padding: 2px; margin: 0 4px 4px; background: var(--surface); border-radius: 10px; }
 .segmented button { padding: 6px 0; border-radius: 8px; font-size: 12.5px; color: var(--muted); }
@@ -28,7 +29,7 @@
   border: 1px solid var(--line);
   border-radius: 26px;
   box-shadow: var(--shadow);
-  padding: 12px 10px 8px 18px;
+  padding: 5px;
   cursor: text;
   transition: border-color 0.15s;
 }
@@ -36,34 +37,37 @@
 .composer.is-disabled { opacity: 0.55; }
 .composer textarea {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  align-self: center;
   border: 0;
   outline: 0;
   background: none;
   resize: none;
   font-size: 16px;
   line-height: 1.65;
-  padding: 2px 8px 6px 0;
+  padding: 6px 4px;
   max-height: 40vh;
 }
 .composer textarea::placeholder { color: var(--faint); }
-.composer-bar { display: flex; align-items: center; gap: 4px; margin-left: -8px; }
-.grow { flex: 1; }
+/* Buttons stay at the bottom as the text grows to several lines. */
+.composer-row { display: flex; align-items: flex-end; gap: 2px; }
+.composer-row .icon-btn { width: 38px; height: 38px; border-radius: 50%; }
 .send {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
+  flex: none;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: var(--accent-bg);
-  color: var(--accent-fg);
-  margin-left: 4px;
+  background: var(--me-bg);
+  color: var(--me-fg);
   transition: opacity 120ms ease, transform 160ms var(--ease-out);
 }
 .send:disabled { opacity: 0.22; }
 .send:not(:disabled):active { transform: scale(0.97); }
 
-.attachments { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px -6px; }
+.attachments { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 8px 4px; }
 .attach { position: relative; width: 64px; height: 64px; }
 .attach img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); }
 .attach button {

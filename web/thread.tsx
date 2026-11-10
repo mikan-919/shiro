@@ -1,20 +1,25 @@
 import { useState } from "react";
-import { assistantText, MODELS, type AssistantMessage, type Part, type ReasoningPart, type ToolPart, type UserMessage } from "../shared";
+import { assistantText, MODELS, speaksInText, type AssistantMessage, type ReasoningPart, type TextPart, type ToolPart, type UserMessage } from "../shared";
 import type { Conversation } from "./sync";
-import { CopyButton, Icon, IconButton } from "./ui";
+import { CopyButton, Icon, IconButton, usePopover } from "./ui";
 import { useFollowBottom } from "./motion";
 import { SmoothMd } from "./markdown";
 import { StepChain } from "./steps";
 import "./thread.css";
 
 const modelName = (id: string) => MODELS.find((m) => m.id === id)?.name ?? id;
+const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
-function UserBubble({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh: boolean; busy: boolean; onEdit: (text: string) => void; onImage: (src: string) => void }) {
+function Reaction({ emoji }: { emoji?: string }) {
+  return emoji ? <span className="reaction" aria-label={`リアクション ${emoji}`}>{emoji}</span> : null;
+}
+
+function UserRow({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh: boolean; busy: boolean; onEdit: (text: string) => void; onImage: (src: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.text);
   if (editing)
     return (
-      <div className="msg user editing">
+      <div className="row me editing">
         <textarea className="edit-box" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus rows={Math.min(10, draft.split("\n").length + 1)} />
         <div className="edit-actions">
           <button type="button" className="btn" onClick={() => (setEditing(false), setDraft(m.text))}>キャンセル</button>
@@ -23,7 +28,7 @@ function UserBubble({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh
       </div>
     );
   return (
-    <div className={`msg user ${fresh ? "is-new" : ""}`}>
+    <div className={`row me ${fresh ? "is-new" : ""}`}>
       {m.images.length > 0 && (
         <div className="user-images">
           {m.images.map((src, i) => (
@@ -33,21 +38,68 @@ function UserBubble({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh
           ))}
         </div>
       )}
-      {m.text && <div className="bubble">{m.text}</div>}
-      <div className="msg-actions">
-        <CopyButton get={() => m.text} />
-        <IconButton icon="pencil" label="編集して送り直す" small disabled={busy} onClick={() => setEditing(true)} />
+      <div className="bubble-line">
+        <div className="row-tools">
+          <CopyButton get={() => m.text} />
+          <IconButton icon="pencil" label="編集して送り直す" small disabled={busy} onClick={() => setEditing(true)} />
+        </div>
+        {m.text && (
+          <div className="bubble">
+            {m.text}
+            <Reaction emoji={m.reaction} />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-type Block = { kind: "text"; text: string; key: string } | { kind: "steps"; parts: (ReasoningPart | ToolPart)[]; key: string };
+/** One of the agent's bubbles. `onReact` is absent for bubbles that cannot take a reaction (old plain-text replies). */
+function Bubble({ text, live, reaction, onReact }: { text: string; live: boolean; reaction?: string; onReact?: (emoji: string | null) => void }) {
+  const pick = usePopover();
+  return (
+    <div className="row them">
+      <div className="bubble-line">
+        <div className="bubble">
+          <div className="prose"><SmoothMd text={text} live={live} /></div>
+          <Reaction emoji={reaction} />
+        </div>
+        <div className="row-tools" ref={pick.ref}>
+          {onReact && <IconButton icon="smile" label="リアクションを付ける" small onClick={() => pick.setOpen(!pick.open)} />}
+          <CopyButton get={() => text} />
+          {pick.mounted && onReact && (
+            <div className={`popover reaction-pop ${pick.leaving ? "leaving" : ""}`} style={pick.style} role="menu" aria-label="リアクション">
+              {REACTIONS.map((e) => (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={e === reaction}
+                  key={e}
+                  className={e === reaction ? "on" : ""}
+                  onClick={() => (pick.setOpen(false), onReact(e === reaction ? null : e))}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-function blocks(parts: Part[]): Block[] {
+type Block =
+  | { kind: "bubble"; key: string; text: string; reaction?: string; sayId?: string }
+  | { kind: "steps"; key: string; parts: (ReasoningPart | TextPart | ToolPart)[] };
+
+/** Bubbles stand alone; consecutive reasoning, notes and tool calls between them form one chain. */
+function blocks(m: AssistantMessage): Block[] {
+  const textIsSpeech = speaksInText(m);
   const out: Block[] = [];
-  parts.forEach((p, i) => {
-    if (p.type === "text") return void out.push({ kind: "text", text: p.text, key: `t${i}` });
+  m.parts.forEach((p, i) => {
+    if (p.type === "say") return void out.push({ kind: "bubble", key: p.id, text: p.text, reaction: p.reaction, sayId: p.id });
+    if (p.type === "text" && textIsSpeech) return void out.push({ kind: "bubble", key: `t${i}`, text: p.text });
     if (p.type === "reasoning" && !p.text.trim()) return;
     const last = out.at(-1);
     if (last?.kind === "steps") last.parts.push(p);
@@ -56,25 +108,28 @@ function blocks(parts: Part[]): Block[] {
   return out;
 }
 
-function AssistantBody({ m, fresh, isLast, busy, onApprove, onRegenerate }: {
+function AssistantRows({ m, fresh, isLast, busy, onApprove, onReact, onRegenerate }: {
   m: AssistantMessage; fresh: boolean; isLast: boolean; busy: boolean;
-  onApprove: (tool: string, ok: boolean) => void; onRegenerate: () => void;
+  onApprove: (call: string, ok: boolean) => void; onReact: (bubble: string, emoji: string | null) => void; onRegenerate: () => void;
 }) {
+  const live = m.status === "streaming";
   const tail = m.parts.at(-1);
-  const waiting =
-    m.status === "streaming" &&
-    (!tail || (tail.type === "reasoning" && tail.done) || (tail.type === "tool" && tail.status !== "running" && tail.status !== "awaiting"));
-  const text = assistantText(m);
+  const typing =
+    live && (!tail || tail.type === "say" || (tail.type === "reasoning" && tail.done) || (tail.type === "tool" && tail.status !== "running" && tail.status !== "awaiting"));
   return (
-    <div className={`msg assistant ${fresh ? "is-new" : ""}`}>
-      {blocks(m.parts).map((b) =>
-        b.kind === "text" ? (
-          <div key={b.key} className="prose"><SmoothMd text={b.text} live={m.status === "streaming"} /></div>
+    <div className={`msg ${fresh ? "is-new" : ""}`}>
+      {blocks(m).map((b) =>
+        b.kind === "bubble" ? (
+          <Bubble key={b.key} text={b.text} live={live} reaction={b.reaction} onReact={b.sayId ? (e) => onReact(b.sayId!, e) : undefined} />
         ) : (
           <StepChain key={b.key} parts={b.parts} onApprove={onApprove} />
         ),
       )}
-      {waiting && <div className="tip" aria-label="応答を待っています"><span /></div>}
+      {typing && (
+        <div className="row them" aria-label="入力中">
+          <div className="bubble typing"><i /><i /><i /></div>
+        </div>
+      )}
       {m.status === "stopped" && <p className="note">生成を停止しました</p>}
       {m.status === "error" && (
         <div className="error-box" role="alert">
@@ -86,10 +141,10 @@ function AssistantBody({ m, fresh, isLast, busy, onApprove, onRegenerate }: {
           {isLast && <button type="button" className="btn" disabled={busy} onClick={onRegenerate}>もう一度送る</button>}
         </div>
       )}
-      {m.status !== "streaming" && (
-        <div className="msg-actions">
-          {text && <CopyButton get={() => text} />}
-          {isLast && <IconButton icon="retry" label="回答を作り直す" small disabled={busy} onClick={onRegenerate} />}
+      {isLast && !live && (
+        <div className="msg-foot">
+          {assistantText(m) && <CopyButton get={() => assistantText(m)} label="返信をまとめてコピー" />}
+          <IconButton icon="retry" label="返信を作り直す" small disabled={busy} onClick={onRegenerate} />
           <span className="model-tag">{modelName(m.model)}</span>
         </div>
       )}
@@ -97,10 +152,10 @@ function AssistantBody({ m, fresh, isLast, busy, onApprove, onRegenerate }: {
   );
 }
 
-export function Thread({ conv, known, onApprove, onEdit, onRegenerate, onImage }: {
+export function Thread({ conv, known, onApprove, onReact, onEdit, onRegenerate, onImage }: {
   conv: Conversation; known: Set<string>;
-  onApprove: (tool: string, ok: boolean) => void; onEdit: (from: UserMessage, text: string) => void;
-  onRegenerate: () => void; onImage: (src: string) => void;
+  onApprove: (call: string, ok: boolean) => void; onReact: (bubble: string, emoji: string | null) => void;
+  onEdit: (from: UserMessage, text: string) => void; onRegenerate: () => void; onImage: (src: string) => void;
 }) {
   const follow = useFollowBottom<HTMLDivElement, HTMLDivElement>({ tau: 200, near: 96 });
   const busy = conv.meta.running;
@@ -111,9 +166,9 @@ export function Thread({ conv, known, onApprove, onEdit, onRegenerate, onImage }
       <div className="column" ref={follow.content}>
         {conv.messages.map((m, i) =>
           m.role === "user" ? (
-            <UserBubble key={m.id} m={m} fresh={!known.has(m.id)} busy={busy} onEdit={(t) => onEdit(m, t)} onImage={onImage} />
+            <UserRow key={m.id} m={m} fresh={!known.has(m.id)} busy={busy} onEdit={(t) => onEdit(m, t)} onImage={onImage} />
           ) : (
-            <AssistantBody key={m.id} m={m} fresh={!known.has(m.id)} isLast={i === lastAssistant} busy={busy} onApprove={onApprove} onRegenerate={onRegenerate} />
+            <AssistantRows key={m.id} m={m} fresh={!known.has(m.id)} isLast={i === lastAssistant} busy={busy} onApprove={onApprove} onReact={onReact} onRegenerate={onRegenerate} />
           ),
         )}
       </div>

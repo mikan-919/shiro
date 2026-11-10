@@ -90,7 +90,6 @@ function App() {
       disabled={!authed}
       onSend={(t, im) => send(t, im)}
       onStop={live.stop}
-      picker={srv && <SettingsPicker settings={settings} jev={srv.jev} onChange={updateSettings} />}
       placeholder={running ? "応答の生成中です" : "shiro にメッセージを送る"}
     />
   );
@@ -128,15 +127,22 @@ function App() {
 
       <main className="main">
         <header className="topbar">
-          {!sidebar && (
-            <>
-              <IconButton icon="panel" label="サイドバーを開く" onClick={() => setSidebar(true)} />
-              <IconButton icon="compose" label="新しい会話" onClick={newChat} />
-            </>
-          )}
-          <h1 className="top-title" key={showThread ? conv.meta.id : "none"}>{showThread ? conv.meta.title : ""}</h1>
-          {!live.online && <span className="offline" role="status">サーバーとの接続が切れています。再接続しています</span>}
+          <IconButton icon="menu" label={sidebar ? "会話の一覧を閉じる" : "会話の一覧を開く"} onClick={() => setSidebar(!sidebar)} />
+          <h1 className="who">
+            <span className="who-avatar" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="26" height="26">
+                <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeDasharray="2.6 2.2" />
+              </svg>
+            </span>
+            <span className="who-name">shiro</span>
+            {showThread && <span className="who-title" key={conv.meta.id}>{conv.meta.title}</span>}
+          </h1>
+          <div className="top-actions">
+            {srv && <SettingsPicker settings={settings} jev={srv.jev} auto={autoApproving} onChange={updateSettings} />}
+            <IconButton icon="compose" label="新しい会話" onClick={newChat} />
+          </div>
         </header>
+        {!live.online && <p className="offline" role="status">サーバーとの接続が切れています。再接続しています</p>}
 
         {showThread ? (
           <>
@@ -145,31 +151,25 @@ function App() {
               conv={conv}
               known={live.known}
               onApprove={live.approve}
+              onReact={live.react}
               onEdit={(m, t) => void send(t, m.images, m.id)}
               onRegenerate={regenerate}
               onImage={setLightbox}
             />
-            <div className="dock">
-              {composerEl}
-              <p className="disclaimer">
-                shiro はこのマシン上でファイルを読み書きします。
-                {autoApproving ? "Jev が安全と判定したコマンドは確認せずに実行し、それ以外は実行前に確認します。" : "コマンドは実行前に確認します。"}
-              </p>
-            </div>
           </>
         ) : live.currentId && !conv ? (
           <div className="center"><span className="spin large" aria-label="読み込み中" /></div>
         ) : (
           <Empty
             needsLogin={!!srv && !authed}
-            composer={composerEl}
             onLogin={live.login}
             onSuggest={(s) => {
-              setDrafts((d) => ({ ...d, new: s }));
+              setDrafts((d) => ({ ...d, [draftKey]: s }));
               composer.current?.focus();
             }}
           />
         )}
+        <div className="dock">{composerEl}</div>
       </main>
 
       {dragging && (

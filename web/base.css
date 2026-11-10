@@ -17,6 +17,8 @@
   --accent-bg: light-dark(#221e18, #eae8e0);
   --accent-fg: light-dark(#efefea, #1c1814);
   --code-bg: light-dark(#e8e7e1, #14110d);
+  --me-bg: light-dark(#a8683a, #96582d);
+  --me-fg: #fff8f1;
   --shadow: 0 1px 0 light-dark(rgb(34 30 24 / 0.04), rgb(0 0 0 / 0.2)), 0 10px 28px -14px light-dark(rgb(34 30 24 / 0.28), rgb(0 0 0 / 0.6));
   --scrim: light-dark(rgb(34 30 24 / 0.32), rgb(0 0 0 / 0.5));
 

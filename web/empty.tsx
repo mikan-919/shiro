@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import "./empty.css";
 
 /** A fairy ring of hyphae: threads start on a circle and branch outward, the centre left bare. */
@@ -57,9 +57,7 @@ const SUGGESTIONS = [
   "今日やることを整理したい",
 ];
 
-export function Empty({ needsLogin, composer, onLogin, onSuggest }: {
-  needsLogin: boolean; composer: ReactNode; onLogin: () => void; onSuggest: (text: string) => void;
-}) {
+export function Empty({ needsLogin, onLogin, onSuggest }: { needsLogin: boolean; onLogin: () => void; onSuggest: (text: string) => void }) {
   return (
     <div className="empty">
       <Ring />
@@ -72,8 +70,7 @@ export function Empty({ needsLogin, composer, onLogin, onSuggest }: {
       ) : (
         <>
           <h2 className="greeting" style={order(1)}>何から始めますか</h2>
-          <div className="empty-composer" style={order(2)}>{composer}</div>
-          <div className="suggestions" style={order(3)}>
+          <div className="suggestions" style={order(2)}>
             {SUGGESTIONS.map((s) => (
               <button type="button" key={s} className="chip" onClick={() => onSuggest(s)}>
                 {s}

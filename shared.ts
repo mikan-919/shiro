@@ -26,7 +26,7 @@ export type ToolStatus = "judging" | "running" | "awaiting" | "done" | "denied" 
 export type Judge = { ok: boolean; by: "rule" | "jev" | "error"; reason?: string; readOnly?: number; reversible?: number; servesTask?: number };
 
 /** Icons the browser draws (web/ui.tsx). */
-export type ToolIcon = "file" | "pencil" | "terminal" | "search";
+export type ToolIcon = "file" | "pencil" | "terminal" | "search" | "chat";
 
 /** How a tool call is shown. Each tool computes its own on the server, so the browser needs no per-tool code. */
 export type ToolView = {
@@ -53,9 +53,14 @@ export type ToolPart = {
   judge?: Judge;
 };
 export type ReasoningPart = { type: "reasoning"; text: string; done: boolean };
-export type Part = ReasoningPart | { type: "text"; text: string } | ToolPart;
+/** A chat bubble the agent sent with send_message. `reaction` is the user's. */
+export type SayPart = { type: "say"; id: string; text: string; reaction?: string };
+/** Text the model wrote outside send_message. The user does not receive it; it shows as a note among the steps. */
+export type TextPart = { type: "text"; text: string };
+export type Part = ReasoningPart | TextPart | ToolPart | SayPart;
 
-export type UserMessage = { id: string; role: "user"; text: string; images: string[]; itemIndex: number };
+/** `reaction` is the agent's, set with its react tool. */
+export type UserMessage = { id: string; role: "user"; text: string; images: string[]; itemIndex: number; reaction?: string };
 export type AssistantMessage = {
   id: string;
   role: "assistant";
@@ -88,7 +93,10 @@ export type Ev =
   | { t: "tool_status"; id: string; status: ToolStatus; output?: string; summary?: string }
   | { t: "tool_judge"; id: string; judge: Judge }
   | { t: "end"; status: "done" | "stopped" | "error"; error?: string }
-  | { t: "truncate"; at: number };
+  | { t: "truncate"; at: number }
+  | { t: "say"; id: string; text: string }
+  /** A reaction on a user message (from the agent) or on a bubble (from the user). null removes it. */
+  | { t: "react"; target: string; emoji: string | null };
 
 export type Account = { email?: string; plan?: string };
 
@@ -104,6 +112,14 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
   if (ev.t === "user") return [...msgs, ev.msg];
   if (ev.t === "assistant") return [...msgs, { id: ev.id, role: "assistant", model: ev.model, parts: [], status: "streaming" }];
   if (ev.t === "truncate") return msgs.slice(0, ev.at);
+  if (ev.t === "react") {
+    const reaction = ev.emoji ?? undefined;
+    return msgs.map((m): Message => {
+      if (m.role === "user") return m.id === ev.target ? { ...m, reaction } : m;
+      if (!m.parts.some((p) => p.type === "say" && p.id === ev.target)) return m;
+      return { ...m, parts: m.parts.map((p) => (p.type === "say" && p.id === ev.target ? { ...p, reaction } : p)) };
+    });
+  }
 
   const last = msgs.at(-1);
   if (last?.role !== "assistant") return msgs;
@@ -123,6 +139,9 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
     case "text_delta":
       if (tail?.type === "text") parts[parts.length - 1] = { ...tail, text: tail.text + ev.text };
       else parts.push({ type: "text", text: ev.text });
+      break;
+    case "say":
+      parts.push({ type: "say", id: ev.id, text: ev.text });
       break;
     case "tool":
       parts.push({ type: "tool", id: ev.id, name: ev.name, args: ev.args, view: ev.view, summary: ev.summary, status: "running" });
@@ -149,5 +168,14 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
   return [...msgs.slice(0, -1), { ...last, parts }];
 }
 
-export const assistantText = (m: AssistantMessage) =>
-  m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n\n");
+/**
+ * Whether this message speaks to the user in plain text parts. True only when it sent no bubble at all:
+ * messages from before send_message existed, or a model that forgot to use it. Otherwise text is a private note.
+ */
+export const speaksInText = (m: AssistantMessage) => !m.parts.some((p) => p.type === "say");
+
+/** What the agent said to the user in a message. */
+export const assistantText = (m: AssistantMessage) => {
+  const spoken = speaksInText(m) ? "text" : "say";
+  return m.parts.flatMap((p) => (p.type === spoken ? [p.text] : [])).join("\n\n");
+};

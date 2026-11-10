@@ -57,7 +57,7 @@
 .badge.bad { background: color-mix(in srgb, var(--rust) 14%, transparent); color: var(--rust); }
 
 .approve {
-  margin: 0 0 14px 33px;
+  margin: 0 0 0 33px;
   padding: 14px 16px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--text) 35%, transparent);
@@ -110,7 +110,7 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
   max-height: 320px;
   overflow-y: auto;
   overflow-anchor: none; /* the glide owns the scroll position; anchoring would fight it */
-  margin: 4px 0 14px;
+  margin: 2px 0;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
 }

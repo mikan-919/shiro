@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLinger } from "./motion";
 
-const ICONS: Record<string, ReactNode> = {
+const ICONS = {
   compose: <><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z" /></>,
   search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
   panel: <><rect x="3" y="3" width="18" height="18" rx="2.5" /><path d="M9 3v18" /></>,
@@ -27,9 +27,15 @@ const ICONS: Record<string, ReactNode> = {
   shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-4" /></>,
   alert: <><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></>,
   folder: <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />,
-};
+  smile: <><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8M9 9.5h.01M15 9.5h.01" /></>,
+  menu: <path d="M5 9h14M5 15h14" />,
+  chat: <path d="M21 12a8.5 8.5 0 0 1-12.3 7.6L4 20.5l1-4.4A8.5 8.5 0 1 1 21 12Z" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  tune: <><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></>,
+} satisfies Record<string, ReactNode>;
+export type IconName = keyof typeof ICONS;
 
-export function Icon({ name, size = 18 }: { name: string; size?: number }) {
+export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   return (
     <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {ICONS[name]}
@@ -37,7 +43,7 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   );
 }
 
-export function IconButton({ icon, label, onClick, className = "", disabled, small }: { icon: string; label: string; onClick?: () => void; className?: string; disabled?: boolean; small?: boolean }) {
+export function IconButton({ icon, label, onClick, className = "", disabled, small }: { icon: IconName; label: string; onClick?: () => void; className?: string; disabled?: boolean; small?: boolean }) {
   return (
     <button type="button" className={`icon-btn ${small ? "small" : ""} ${className}`} onClick={onClick} aria-label={label} title={label} disabled={disabled}>
       <Icon name={icon} size={small ? 16 : 18} />

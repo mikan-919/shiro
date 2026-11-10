@@ -101,6 +101,13 @@ const server = Bun.serve({
         return Response.json({ ok: true });
       }),
     },
+    "/api/conversations/:id/react": {
+      POST: guard(async (req) => {
+        const b = await body(req);
+        const emoji = typeof b.emoji === "string" && b.emoji.length <= 16 ? b.emoji : null;
+        return Response.json({ ok: typeof b.target === "string" && agent.react(req.params.id, b.target, emoji) });
+      }),
+    },
     "/api/conversations/:id/approve": {
       POST: guard(async (req) => {
         const b = await body(req);

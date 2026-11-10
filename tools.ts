@@ -1,22 +1,9 @@
-import type { FunctionTool } from "openai/resources/responses/responses";
 import type { ToolStatus, ToolView } from "./shared";
-import { firstLine, str, type Args, type Tool } from "./toolkit";
+import { def, firstLine, str, type Args, type Tool } from "./toolkit";
+import { react, sendMessage } from "./chat";
 import { searchTool } from "./search";
 
 const lineCount = (s: string) => (s ? s.replace(/\n$/, "").split("\n").length : 0);
-
-const def = (name: string, description: string, props: Record<string, string>): FunctionTool => ({
-  type: "function",
-  name,
-  description,
-  strict: true,
-  parameters: {
-    type: "object",
-    properties: Object.fromEntries(Object.entries(props).map(([k, d]) => [k, { type: "string", description: d }])),
-    required: Object.keys(props),
-    additionalProperties: false,
-  },
-});
 
 // Keeps one huge file or log from filling the context window.
 const LIMIT = 50_000;
@@ -73,7 +60,7 @@ const bash: Tool = {
   },
 };
 
-const ALL = [readFile, writeFile, editFile, bash, searchTool];
+const ALL = [sendMessage, react, readFile, writeFile, editFile, bash, searchTool];
 
 const enabled = (t: Tool) => t.enabled?.() ?? true;
 export const available = () => ALL.filter(enabled);

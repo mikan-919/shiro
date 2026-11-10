@@ -5,7 +5,7 @@ test("edit_file replaces only a unique match", async () => {
   const p = `${import.meta.dir}/.tmp-edit.txt`;
   await Bun.write(p, "a $& b a");
   const edit = usable("edit_file")!;
-  const ctx = { signal: new AbortController().signal, model: "" };
+  const ctx = { signal: new AbortController().signal, model: "", chat: { say() {}, react: () => false } };
   await expect(edit.run({ path: p, old_str: "a", new_str: "x" }, ctx)).rejects.toThrow("2 times");
   await edit.run({ path: p, old_str: " b", new_str: " $1" }, ctx);
   expect(await Bun.file(p).text()).toBe("a $& $1 a");

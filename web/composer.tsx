@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { EFFORTS, MODELS } from "../shared";
 import type { Settings } from "./sync";
 import { Icon, IconButton, usePopover } from "./ui";
@@ -34,10 +34,10 @@ function clipBox(el: HTMLElement): { top: number; bottom: number } {
   return { top: 0, bottom: innerHeight };
 }
 
-export function SettingsPicker({ settings, jev, onChange }: { settings: Settings; jev: boolean; onChange: (patch: Partial<Settings>) => void }) {
+/** `auto`: commands are being auto-approved (Jev available and the setting on). */
+export function SettingsPicker({ settings, jev, auto, onChange }: { settings: Settings; jev: boolean; auto: boolean; onChange: (patch: Partial<Settings>) => void }) {
   const pop = usePopover();
   const [place, setPlace] = useState({ up: true, max: 480 });
-  const auto = jev && settings.autoApprove;
   const effortIndex = Math.max(0, EFFORTS.findIndex((e) => e.id === settings.effort));
   const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -50,7 +50,8 @@ export function SettingsPicker({ settings, jev, onChange }: { settings: Settings
     <div className="picker" ref={pop.ref}>
       <button type="button" className="picker-btn" onClick={toggle} aria-expanded={pop.open} aria-haspopup="dialog">
         {auto && <span className="picker-auto" title="コマンドの自動承認が有効です"><Icon name="shield" size={14} /></span>}
-        <span>{MODELS.find((m) => m.id === settings.model)?.name ?? settings.model}</span>
+        <Icon name="tune" size={16} />
+        <span className="picker-model">{MODELS.find((m) => m.id === settings.model)?.name ?? settings.model}</span>
         <span className="picker-effort">{EFFORTS[effortIndex]?.name}</span>
         <Icon name="chevron" size={14} />
       </button>
@@ -94,8 +95,8 @@ export type ComposerHandle = { addFiles: (files: File[]) => void; focus: () => v
 
 export const Composer = forwardRef<ComposerHandle, {
   value: string; onChange: (v: string) => void; running: boolean; disabled: boolean;
-  onSend: (text: string, images: string[]) => Promise<boolean>; onStop: () => void; picker: ReactNode; placeholder: string;
-}>(function Composer({ value, onChange, running, disabled, onSend, onStop, picker, placeholder }, handle) {
+  onSend: (text: string, images: string[]) => Promise<boolean>; onStop: () => void; placeholder: string;
+}>(function Composer({ value, onChange, running, disabled, onSend, onStop, placeholder }, handle) {
   const [images, setImages] = useState<string[]>([]);
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -140,28 +141,26 @@ export const Composer = forwardRef<ComposerHandle, {
           ))}
         </div>
       )}
-      <textarea
-        ref={ta}
-        rows={1}
-        value={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        aria-label="メッセージ"
-        onChange={(e) => onChange(e.target.value)}
-        onPaste={(e) => {
-          const files = imageFiles(e.clipboardData.files);
-          if (files.length) (e.preventDefault(), addFiles(files));
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) (e.preventDefault(), submit());
-          if (e.key === "Escape" && running) onStop();
-        }}
-      />
-      <div className="composer-bar">
-        <IconButton icon="clip" label="画像を添付" disabled={disabled} onClick={() => fileInput.current?.click()} />
+      <div className="composer-row">
+        <IconButton icon="plus" label="画像を添付" disabled={disabled} onClick={() => fileInput.current?.click()} />
         <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => (addFiles(imageFiles(e.target.files)), (e.target.value = ""))} />
-        <div className="grow" />
-        {picker}
+        <textarea
+          ref={ta}
+          rows={1}
+          value={value}
+          placeholder={placeholder}
+          disabled={disabled}
+          aria-label="メッセージ"
+          onChange={(e) => onChange(e.target.value)}
+          onPaste={(e) => {
+            const files = imageFiles(e.clipboardData.files);
+            if (files.length) (e.preventDefault(), addFiles(files));
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) (e.preventDefault(), submit());
+            if (e.key === "Escape" && running) onStop();
+          }}
+        />
         {running ? (
           <button type="button" key="stop" className="send stop" onClick={onStop} aria-label="生成を停止" title="生成を停止（Esc）">
             <Icon name="stop" />
