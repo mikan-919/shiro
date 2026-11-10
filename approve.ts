@@ -42,20 +42,52 @@ function normalise(s: string): string {
   let prev: string;
   do {
     prev = s;
+    // command -v/-V only looks up names; it never executes its arguments.
+    if (/^command\s+(?:-p\s+)?-[vV](?:\s|$)/.test(s.trim())) return "";
     // "/usr/bin/git" and "./node_modules/.bin/tsc" are judged by their command name.
     s = s.trim().replace(KEYWORDS, "").replace(WRAPPERS, "").replace(ASSIGN, "").replace(/^\\/, "").replace(/^\S*\/(?=\S)/, "");
   } while (s !== prev);
   return s;
 }
 
+// Mask literal argument contents, not shell syntax. Keep quote/backslash markers so
+// obfuscated executable names still reach RISKY's first rule. This is deliberately
+// not a shell parser: expansions are blocked separately and malformed input fails closed.
+function maskLiterals(command: string): string | null {
+  let quote: "'" | '"' | null = null;
+  let masked = "";
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]!;
+    if (c === "\\" && quote !== "'") {
+      if (i + 1 === command.length) return null;
+      // Inside double quotes this also consumes escaped quotes; other escaped
+      // characters cannot close the quote or introduce shell separators.
+      if (!quote) masked += "\\x";
+      i++;
+    } else if (quote) {
+      // A double-quoted expansion is not a literal argument. Leave its
+      // interpretation to manual approval rather than hiding it from the rules.
+      if (quote === '"' && c === "$") return null;
+      if (c === quote) {
+        masked += c;
+        quote = null;
+      }
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      masked += c;
+    } else {
+      masked += c;
+    }
+  }
+  return quote ? null : masked;
+}
+
 /** Returns why a command must be confirmed by the user, or null if Jev may decide. */
 export function neverAuto(command: string): string | null {
   if (/\$\(|<\(|>\(|`|\\\n/.test(command)) return "コマンド置換を含むコマンドです";
   if (SECRETS.test(command)) return "認証情報に触れる可能性があります";
-  // A quoted argument is one literal word (a grep pattern with | or > in it), so empty it before splitting.
-  // The quotes stay, so a quoted command name or a leftover unpaired quote still trips the first rule.
-  // One left-to-right pass, so a ' inside "..." is not taken as an opening quote; a backslash could escape a quote, so skip it then.
-  const unquoted = command.includes("\\") ? command : command.replace(/'[^']*'|"[^"$`]*"/g, (q) => q[0]! + q[0]);
+  const unquoted = maskLiterals(command);
+  if (unquoted === null) return "引用符や変数展開の解釈を確認する必要があります";
   // Redirects that only merge or discard output write no file; drop them before looking further.
   const plain = unquoted.replace(/\d*>&\d|&>\s*\/dev\/null|\d*>\s*\/dev\/null/g, " ");
   if (/>/.test(plain)) return "リダイレクトでファイルに書き込むコマンドです";

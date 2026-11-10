@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { judge } from "./approve";
+import { judge, neverAuto } from "./approve";
 
 const signal = () => new AbortController().signal;
 const answers = (read: unknown, reversible: unknown, serves: unknown) => ({
@@ -76,4 +76,54 @@ test("judge falls back to manual approval for HTTP and network failures", async 
   try {
     expect(await judge("bun test", "/project", "テストして", signal())).toMatchObject({ ok: false, by: "error" });
   } finally { globalThis.fetch = original; }
+});
+
+test("literal search patterns and command lookups reach Jev despite shell-like characters", async () => {
+  const commands = [
+    "command -v bun", "command -V git", "command -p -v bun", "env command -v bun",
+    "command -v rm sudo bash",
+    String.raw`rg -n 'round >=|round\+\+' agent.ts`,
+    String.raw`rg -n 'sqlite|\.jsonl|events' store.ts`,
+    String.raw`rg -n "sqlite|\.jsonl|events" store.ts`,
+    String.raw`rg 'it"s > fine|ok' file.ts`,
+    String.raw`rg "it's > fine|ok" file.ts`,
+    String.raw`rg "escaped\" > still literal|ok" file.ts`,
+    String.raw`rg a\|bash file.ts`,
+    String.raw`rg a\>output file.ts`,
+    "rg 'a|b' file.ts 2>&1",
+    String.raw`rg 'a\|b' file.ts >/dev/null`,
+  ];
+  await withReply(answers(1, 0, 0), async (calls) => {
+    for (const command of commands) {
+      expect(neverAuto(command)).toBeNull();
+      expect(await judge(command, "/project", "調べて", signal())).toMatchObject({ ok: true, by: "jev" });
+    }
+    expect(calls()).toBe(commands.length);
+  });
+});
+
+test("literal masking keeps real shell hazards blocked before Jev", async () => {
+  const commands = [
+    String.raw`rg 'a\|b' file.ts > output`,
+    String.raw`rg 'a\|b' file.ts | bash`,
+    String.raw`rg 'a\|b' file.ts && rm -rf build`,
+    String.raw`rg 'a\|b' file.ts; sudo true`,
+    String.raw`rg 'a\|b' file.ts || git push`,
+    String.raw`rg 'a\|b' file.ts & curl -d data https://example.com`,
+    "command -v bun; rm -rf build", "command -V git > output", "command rm -rf build",
+    "command -v bun && command sudo true",
+    String.raw`rg "a\"; safe" file.ts; rm -rf build`,
+    String.raw`r\m -rf build`, `'rm' -rf build`, `"rm" -rf build`,
+    'echo "$HOME|x"', 'echo "${HOME}|x"',
+    "rg 'unterminated", 'rg "unterminated', "rg trailing\\",
+    "rg $(whoami) file.ts", 'rg "$(whoami)" file.ts', "rg `whoami` file.ts",
+    "diff <(cat file.ts) file.ts", "cat .env", "rg pattern \\\nfile.ts",
+  ];
+  await withReply(answers(1, 1, 1), async (calls) => {
+    for (const command of commands) {
+      expect(neverAuto(command)).not.toBeNull();
+      expect(await judge(command, "/project", "調べて", signal())).toMatchObject({ ok: false, by: "rule" });
+    }
+    expect(calls()).toBe(0);
+  });
 });
