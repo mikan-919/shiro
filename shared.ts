@@ -168,14 +168,5 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
   return [...msgs.slice(0, -1), { ...last, parts }];
 }
 
-/**
- * Whether this message speaks to the user in plain text parts. True only when it sent no bubble at all:
- * messages from before send_message existed, or a model that forgot to use it. Otherwise text is a private note.
- */
-export const speaksInText = (m: AssistantMessage) => !m.parts.some((p) => p.type === "say");
-
-/** What the agent said to the user in a message. */
-export const assistantText = (m: AssistantMessage) => {
-  const spoken = speaksInText(m) ? "text" : "say";
-  return m.parts.flatMap((p) => (p.type === spoken ? [p.text] : [])).join("\n\n");
-};
+/** What the agent said to the user in a message: its bubbles. Text written outside send_message is never shown. */
+export const assistantText = (m: AssistantMessage) => m.parts.flatMap((p) => (p.type === "say" ? [p.text] : [])).join("\n\n");

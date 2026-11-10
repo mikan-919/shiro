@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { assistantText, MODELS, speaksInText, type AssistantMessage, type ReasoningPart, type TextPart, type ToolPart, type UserMessage } from "../shared";
+import { assistantText, MODELS, type AssistantMessage, type ReasoningPart, type ToolPart, type UserMessage } from "../shared";
 import type { Conversation } from "./sync";
 import { CopyButton, Icon, IconButton, usePopover } from "./ui";
 import { useFollowBottom } from "./motion";
@@ -91,15 +91,14 @@ function Bubble({ text, reaction, onReact }: { text: string; reaction?: string; 
 
 type Block =
   | { kind: "bubble"; key: string; text: string; reaction?: string; sayId?: string }
-  | { kind: "steps"; key: string; parts: (ReasoningPart | TextPart | ToolPart)[] };
+  | { kind: "steps"; key: string; parts: (ReasoningPart | ToolPart)[] };
 
-/** Bubbles stand alone; consecutive reasoning, notes and tool calls between them form one chain. */
+/** Bubbles stand alone; consecutive reasoning and tool calls between them form one chain. Plain text is not shown. */
 function blocks(m: AssistantMessage): Block[] {
-  const textIsSpeech = speaksInText(m);
   const out: Block[] = [];
   m.parts.forEach((p, i) => {
     if (p.type === "say") return void out.push({ kind: "bubble", key: p.id, text: p.text, reaction: p.reaction, sayId: p.id });
-    if (p.type === "text" && textIsSpeech) return void out.push({ kind: "bubble", key: `t${i}`, text: p.text });
+    if (p.type === "text") return;
     if (p.type === "reasoning" && !p.text.trim()) return;
     const last = out.at(-1);
     if (last?.kind === "steps") last.parts.push(p);
@@ -115,7 +114,7 @@ function AssistantRows({ m, fresh, isLast, busy, onApprove, onReact, onRegenerat
   const live = m.status === "streaming";
   const tail = m.parts.at(-1);
   const typing =
-    live && (!tail || tail.type === "say" || (tail.type === "reasoning" && tail.done) || (tail.type === "tool" && tail.status !== "running" && tail.status !== "awaiting"));
+    live && (!tail || tail.type === "say" || tail.type === "text" || (tail.type === "reasoning" && tail.done) || (tail.type === "tool" && tail.status !== "running" && tail.status !== "awaiting"));
   return (
     <div className={`msg ${fresh ? "is-new" : ""}`}>
       {blocks(m).map((b) =>

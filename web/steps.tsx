@@ -1,6 +1,6 @@
 // Reasoning and tool calls, shown as one thread of steps.
 import { useLayoutEffect, useState, type ReactNode } from "react";
-import type { Judge, ReasoningPart, TextPart, ToolPart, ToolView } from "../shared";
+import type { Judge, ReasoningPart, ToolPart, ToolView } from "../shared";
 import { Collapse, Icon } from "./ui";
 import { useFollowBottom } from "./motion";
 import { Md } from "./markdown";
@@ -9,16 +9,15 @@ import "./steps.css";
 const pct = (v?: number) => (v === undefined ? "-" : `${Math.round(v * 100)}%`);
 const judgeDetail = (j: Judge) => `読み取りのみ ${pct(j.readOnly)}、取り消せる操作 ${pct(j.reversible)}、依頼に沿う ${pct(j.servesTask)}`;
 
-/** The model's own words in the chain: its reasoning, or text it wrote without sending (a note). */
-function ThoughtStep({ p }: { p: ReasoningPart | TextPart }) {
+function ThoughtStep({ p }: { p: ReasoningPart }) {
   const [open, setOpen] = useState(true);
-  const done = p.type === "text" || p.done;
+  const { done } = p;
   const heading = [...p.text.matchAll(/\*\*(.+?)\*\*/g)].at(-1)?.[1];
   return (
     <li className={`step ${done ? "" : "is-live"}`}>
       <button type="button" className="step-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className="step-node"><Icon name="ring" size={14} /></span>
-        <span className="step-verb">{p.type === "text" ? "メモ" : done ? "考えた過程" : "考えています"}</span>
+        <span className="step-verb">{done ? "考えた過程" : "考えています"}</span>
         {!done && heading && <span className="step-target">{heading}</span>}
         <span className={`step-caret ${open ? "open" : ""}`}><Icon name="chevron" size={14} /></span>
       </button>
@@ -120,7 +119,7 @@ function ApproveCard({ p, onApprove }: { p: ToolPart; onApprove: (ok: boolean) =
  * glides after them, so a long run of tool calls stays a fixed height instead of pushing the answer away.
  * Approval cards sit below it, so a pending one is never scrolled out of view or faded at the edge.
  */
-export function StepChain({ parts, onApprove }: { parts: (ReasoningPart | TextPart | ToolPart)[]; onApprove: (tool: string, ok: boolean) => void }) {
+export function StepChain({ parts, onApprove }: { parts: (ReasoningPart | ToolPart)[]; onApprove: (tool: string, ok: boolean) => void }) {
   const follow = useFollowBottom<HTMLDivElement, HTMLOListElement>({ tau: 1000, near: 24, onScroll: () => measure() });
   const [edges, setEdges] = useState({ top: false, bottom: false });
   function measure() {
