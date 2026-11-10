@@ -4,6 +4,7 @@ import type { ToolView } from "./shared";
 
 export type Args = Record<string, unknown>;
 export type ToolContext = {
+  team?: { act(action: string, id: string, text: string): string };
   signal: AbortSignal;
   /** The model making the call; services that tune results for it (Parallel) take it. */
   model: string;

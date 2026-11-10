@@ -5,7 +5,10 @@ export const sendMessage: Tool = {
   def: def(
     "send_message",
     "Send a chat message to the user. This is the only way the user sees anything you write. " +
-      "Write like texting a person: one or two sentences per message. Split a longer reply into a few messages instead of one long one.",
+      "Each call is one chat bubble: usually one short sentence or natural fragment. " +
+      "Use one or two bubbles for most replies, separating distinct thoughts rather than chopping up an essay. Match the user's tone and pace. " +
+      "In the group chat, report your own meaningful work and its results here, including reviews or tests with no code changes; shared team notes are not a substitute. " +
+      "Your speaker name is attached automatically. Do not repeat a peer's answer or claim their actions as yours.",
     { text: "The message" },
   ),
   silent: true,

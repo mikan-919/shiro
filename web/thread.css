@@ -138,3 +138,10 @@
   .row.is-new, .msg.is-new .row { opacity: 0; transform: translateY(8px) scale(0.96); }
   .msg.is-new .step { opacity: 0; transform: translateY(4px); }
 }
+
+/* Participant identity without changing the chat layout. */
+.sender { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; padding-left: 8px; }
+.sender::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #729b80; flex: none; }
+.sender.peer-two::before { background: #8c87bc; }
+.team-presence { display: flex; flex-wrap: wrap; gap: 16px; padding: 8px 0; }
+.team-presence .typing { padding: 10px 12px; }

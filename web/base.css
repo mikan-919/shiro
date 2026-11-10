@@ -1,3 +1,19 @@
+/* Official unmodified LINE Seed JP webfonts; license and source: fonts/OFL.txt, fonts/README.md. */
+@font-face {
+  font-family: "LINE Seed JP";
+  src: url("./fonts/LINESeedJP-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "LINE Seed JP";
+  src: url("./fonts/LINESeedJP-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
 /* shiro — soil and mycelium.
    Light theme is the white of hyphae; dark theme is humus. Pine green means "allowed", rust means "stop". */
 
@@ -22,9 +38,9 @@
   --shadow: 0 1px 0 light-dark(rgb(34 30 24 / 0.04), rgb(0 0 0 / 0.2)), 0 10px 28px -14px light-dark(rgb(34 30 24 / 0.28), rgb(0 0 0 / 0.6));
   --scrim: light-dark(rgb(34 30 24 / 0.32), rgb(0 0 0 / 0.5));
 
-  --sans: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif;
-  --mincho: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
-  --mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: "LINE Seed JP", sans-serif;
+  --mincho: var(--sans);
+  --mono: var(--sans);
   --column: 46rem;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -47,7 +63,8 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
-button, input, textarea { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
+pre, code, samp { font-family: var(--sans); }
 button { cursor: pointer; background: none; border: 0; padding: 0; }
 button:disabled { cursor: default; }
 a { color: inherit; }

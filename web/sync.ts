@@ -1,11 +1,11 @@
 // The browser half of the server protocol: REST calls, and the WebSocket event stream kept in step with
 // the conversation on screen.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apply, type Account, type ConvView, type Message, type Push, type Settings } from "../shared";
+import { apply, type Board, type Account, type ConvView, type Message, type Push, type Settings } from "../shared";
 export type { Settings };
 
 export type ServerState = { account: Account | null; cwd: string; defaultModel: string; jev: boolean };
-export type Conversation = { meta: ConvView; messages: Message[] };
+export type Conversation = { meta: ConvView; messages: Message[]; board?: Board };
 
 async function api<T = unknown>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await fetch(path, {
@@ -40,6 +40,7 @@ export function useStored<T>(key: string, init: T) {
   return [v, set] as const;
 }
 
+const contextFromPath = () => /^\/c\/[\w-]+\/context\/?$/.test(location.pathname);
 const idFromPath = () => /^\/c\/([\w-]+)/.exec(location.pathname)?.[1] ?? null;
 
 /**
@@ -51,6 +52,7 @@ export function useLive(say: (msg: string) => void) {
   const [srv, setSrv] = useState<ServerState | null>(null);
   const [convs, setConvs] = useState<ConvView[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(idFromPath);
+  const [contextPage, setContextPage] = useState(contextFromPath);
   const [conv, setConv] = useState<Conversation | null>(null);
   const [online, setOnline] = useState(true);
   const seq = useRef(0);
@@ -61,34 +63,43 @@ export function useLive(say: (msg: string) => void) {
   const fail = useCallback((e: unknown) => say((e as Error).message), [say]);
 
   // Points the URL and the screen at a conversation. The shown one stays while it is the same, so reloading it does not flash.
-  const show = useCallback((id: string | null) => {
-    if (idFromPath() !== id) history.pushState(null, "", id ? `/c/${id}` : "/");
+  const show = useCallback((id: string | null, context = false) => {
+    const path = id ? `/c/${id}${context ? "/context" : ""}` : "/";
+    if (location.pathname !== path) history.pushState(null, "", path);
+    setContextPage(context && !!id);
     cur.current = id;
     setCurrentId(id);
     setConv((c) => (id && c?.meta.id === id ? c : null));
   }, []);
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async function loadConversation(id: string) {
     const pending: Push[] = [];
     held.current = pending;
     try {
       const d = await api<Conversation & { seq: number }>(`/api/conversations/${id}`);
-      if (cur.current !== id) return;
-      let { messages, seq: s } = d;
-      for (const p of pending) if (p.type === "ev" && p.conv === id && p.seq > s) ((messages = apply(messages, p.ev)), (s = p.seq));
+      if (cur.current !== id || held.current !== pending) return;
+      let { meta, messages, board, seq: s } = d;
+      for (const p of pending) {
+        if (p.type === "meta" && p.meta.id === id && p.meta.updatedAt >= meta.updatedAt) meta = p.meta;
+        if (p.type !== "ev" || p.conv !== id || p.seq <= s) continue;
+        if (p.seq !== s + 1) return void loadConversation(id);
+        messages = apply(messages, p.ev);
+        if (p.ev.t === "board") board = p.ev.board;
+        s = p.seq;
+      }
       seq.current = s;
       known.current = new Set(messages.map((m) => m.id));
-      setConv({ meta: d.meta, messages });
+      setConv({ meta, messages, board });
     } catch (e) {
-      if (cur.current === id) (fail(e), show(null));
+      if (cur.current === id && held.current === pending) (fail(e), show(null));
     } finally {
       if (held.current === pending) held.current = null;
     }
   }, [fail, show]);
 
   /** Shows a conversation (null: the new-chat screen). Pass `initial` when its contents are already known. */
-  const open = useCallback((id: string | null, initial?: Conversation) => {
-    show(id);
+  const open = useCallback((id: string | null, initial?: Conversation, context = false) => {
+    show(id, context);
     if (!id) return;
     if (initial) {
       seq.current = 0;
@@ -117,8 +128,9 @@ export function useLive(say: (msg: string) => void) {
       if (p.seq <= seq.current) return;
       if (p.seq !== seq.current + 1) return void load(p.conv);
       seq.current = p.seq;
-      setConv((c) => (c && c.meta.id === p.conv ? { ...c, messages: apply(c.messages, p.ev) } : c));
+      setConv((c) => (c && c.meta.id === p.conv ? { ...c, messages: apply(c.messages, p.ev), board: p.ev.t === "board" ? p.ev.board : c.board } : c));
     } else if (p.type === "meta") {
+      if (held.current && p.meta.id === cur.current) held.current.push(p);
       setConvs((cs) => [p.meta, ...cs.filter((c) => c.id !== p.meta.id)].sort((a, b) => b.updatedAt - a.updatedAt));
       setConv((c) => (c && c.meta.id === p.meta.id ? { ...c, meta: p.meta } : c));
     } else if (p.type === "deleted") {
@@ -159,7 +171,7 @@ export function useLive(say: (msg: string) => void) {
   }, [refresh]);
 
   useEffect(() => {
-    const f = () => open(idFromPath());
+    const f = () => open(idFromPath(), undefined, contextFromPath());
     addEventListener("popstate", f);
     return () => removeEventListener("popstate", f);
   }, [open]);
@@ -173,6 +185,8 @@ export function useLive(say: (msg: string) => void) {
     currentId,
     conv,
     online,
+    contextPage,
+    openContext: () => { if (currentId) open(currentId, undefined, true); },
     known: known.current,
     open,
 

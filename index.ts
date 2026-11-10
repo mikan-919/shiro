@@ -42,6 +42,7 @@ const server = Bun.serve({
   routes: {
     "/": page,
     "/c/:id": page,
+    "/c/:id/context": page,
 
     "/api/state": {
       GET: guard(async () => Response.json({ account: await account(), cwd: CWD, defaultModel, jev: jevEnabled() })),

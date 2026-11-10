@@ -114,10 +114,14 @@ function AssistantRows({ m, fresh, isLast, busy, onApprove, onReact, onRegenerat
   const live = m.status === "streaming";
   const tail = m.parts.at(-1);
   // Steps are hidden for now, so the dots stand for all work in progress; only a pending approval shows its own card.
-  const typing = live && !(tail?.type === "tool" && tail.status === "awaiting");
+  const typing = !m.agent && live && !(tail?.type === "tool" && tail.status === "awaiting");
+  const content = blocks(m);
+  const visible = content.some((b) => b.kind === "bubble" || b.parts.some((p) => p.type === "tool" && p.status === "awaiting"));
+  if (m.agent && !visible && m.status !== "error" && m.status !== "stopped") return null;
   return (
     <div className={`msg ${fresh ? "is-new" : ""}`}>
-      {blocks(m).map((b) =>
+      {m.agent && <span className={`sender ${m.agent === "shiro-2" ? "peer-two" : ""}`}>{m.agent}</span>}
+      {content.map((b) =>
         b.kind === "bubble" ? (
           <Bubble key={b.key} text={b.text} reaction={b.reaction} onReact={b.sayId ? (e) => onReact(b.sayId!, e) : undefined} />
         ) : (
@@ -140,7 +144,7 @@ function AssistantRows({ m, fresh, isLast, busy, onApprove, onReact, onRegenerat
           {isLast && <button type="button" className="btn" disabled={busy} onClick={onRegenerate}>もう一度送る</button>}
         </div>
       )}
-      {isLast && !live && (
+      {isLast && !live && !busy && (
         <div className="msg-foot">
           {assistantText(m) && <CopyButton get={() => assistantText(m)} label="返信をまとめてコピー" />}
           <IconButton icon="retry" label="返信を作り直す" small disabled={busy} onClick={onRegenerate} />
@@ -158,6 +162,7 @@ export function Thread({ conv, known, onApprove, onReact, onEdit, onRegenerate, 
 }) {
   const follow = useFollowBottom<HTMLDivElement, HTMLDivElement>({ tau: 200, near: 96 });
   const busy = conv.meta.running;
+  const participants = conv.messages.filter((m): m is AssistantMessage => m.role === "assistant" && !!m.agent && m.status === "streaming");
   const lastAssistant = conv.messages.findLastIndex((m) => m.role === "assistant");
 
   return (
@@ -169,6 +174,20 @@ export function Thread({ conv, known, onApprove, onReact, onEdit, onRegenerate, 
           ) : (
             <AssistantRows key={m.id} m={m} fresh={!known.has(m.id)} isLast={i === lastAssistant} busy={busy} onApprove={onApprove} onReact={onReact} onRegenerate={onRegenerate} />
           ),
+        )}
+        {busy && participants.length > 0 && (
+          <div className="team-presence" role="status" aria-label="参加者の状態">
+            {participants.map((m) => (
+              <span key={m.id} className={`sender ${m.agent === "shiro-2" ? "peer-two" : ""}`}>
+                {m.agent}
+                {m.parts.some((p) => p.type === "tool" && p.status === "awaiting") ? (
+                  <span>承認待ち</span>
+                ) : (
+                  <span className="bubble typing" aria-label="入力中"><i /><i /><i /></span>
+                )}
+              </span>
+            ))}
+          </div>
         )}
       </div>
       {follow.away && (

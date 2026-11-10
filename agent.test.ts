@@ -1,0 +1,270 @@
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import type { CodexEvent, respond } from "./codex";
+import type { Push } from "./shared";
+
+// Never open the user's conversation DB or call external model / approval APIs.
+const dir = mkdtempSync(`${tmpdir()}/shiro-team-`);
+const oldDB = process.env.SHIRO_DB;
+process.env.SHIRO_DB = `${dir}/test.db`;
+const { createAgent } = await import("./agent");
+const store = await import("./store");
+if (oldDB === undefined) delete process.env.SHIRO_DB; else process.env.SHIRO_DB = oldDB;
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+const item = (name: string, args: object): CodexEvent => ({ type: "item", item: { type: "function_call", call_id: "same-id", name, arguments: JSON.stringify(args) } });
+async function until(f: () => boolean) {
+  const deadline = Date.now() + 3000;
+  while (!f()) {
+    if (Date.now() > deadline) throw new Error("runtime did not settle");
+    await Bun.sleep(5);
+  }
+}
+const setup = (response: typeof respond) => {
+  const pushes: Push[] = [];
+  const agent = createAgent({ publish: (p) => pushes.push(p), cwd: dir, defaultModel: "test", response });
+  const conv = agent.create({ autoApprove: false });
+  return { agent, id: conv.id, pushes };
+};
+
+test("two peers overlap, atomically claim different tasks and send ordered named bubbles", async () => {
+  let started = 0;
+  const gate = Promise.withResolvers<void>();
+  const calls = new Map<string, number>();
+  const response: typeof respond = async function* (o) {
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (n === 0) {
+      if (++started === 2) gate.resolve();
+      await gate.promise;
+      yield item("team", { action: "claim", id: "", text: "" });
+    } else if (n === 1) {
+      const output = o.input.at(-1);
+      expect(output?.type).toBe("function_call_output");
+      const task = JSON.parse((output as { output: string }).output);
+      expect(task.owner).toBe(o.session.split(":").at(-1));
+      yield item("send_message", { text: task.id });
+    }
+  };
+  const { agent, id, pushes } = setup(response);
+  expect(agent.send(id, "work", [])).toBe("ok");
+  expect(agent.send(id, "duplicate", [])).toBe("busy");
+  await until(() => !agent.open(id)!.meta.running);
+  expect(started).toBe(2);
+  const c = store.get(id)!;
+  const bubbles = c.messages.filter((m) => m.role === "assistant" && m.parts.some((p) => p.type === "say"));
+  expect(bubbles.length).toBe(2);
+  expect(new Set(bubbles.map((m) => m.role === "assistant" && m.agent)).size).toBe(2);
+  expect(new Set(c.board?.notes.map((n) => n.text)).size).toBe(2);
+  // Unfinished claims are released when their peer exits.
+  expect(c.board?.tasks.every((t) => !t.owner)).toBe(true);
+  // No function calls from one private session leak into the other or shared history.
+  expect(c.items.every((i) => i.type !== "function_call" && i.type !== "function_call_output")).toBe(true);
+  const events = pushes.filter((p) => p.type === "ev");
+  expect(events.map((p) => p.type === "ev" && p.seq)).toEqual(events.map((_, i) => i + 1));
+  const firstUser = c.messages[0]!;
+  expect(agent.send(id, "edited", [], firstUser.id)).toBe("ok");
+  await until(() => !agent.open(id)!.meta.running);
+  expect(store.get(id)!.messages[0]?.role === "user" && (store.get(id)!.messages[0] as { text: string }).text).toBe("edited");
+  expect(store.get(id)!.items.length).toBe(1);
+  agent.remove(id);
+});
+
+test("approval IDs are isolated and stopping resolves all pending approvals", async () => {
+  const calls = new Map<string, number>();
+  const response: typeof respond = async function* (o) {
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (!n) yield item("bash", { command: "printf should-not-run" });
+  };
+  const { agent, id, pushes } = setup(response);
+  agent.send(id, "test approvals", []);
+  const pending = () => pushes.filter((p) => p.type === "ev" && p.ev.t === "tool_status" && p.ev.status === "awaiting");
+  await until(() => pending().length === 2);
+  const ids = pending().map((p) => p.type === "ev" && p.ev.t === "tool_status" ? p.ev.id : "");
+  expect(new Set(ids).size).toBe(2);
+  expect(agent.approve(id, "same-id", true)).toBe(false);
+  agent.stop(id);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(store.get(id)!.messages.filter((m) => m.role === "assistant").every((m) => m.role === "assistant" && m.status === "stopped")).toBe(true);
+  expect(agent.approve(id, ids[0]!, true)).toBe(false);
+  agent.remove(id);
+});
+
+test("deletion during generation never resurrects the conversation", async () => {
+  const response: typeof respond = async function* (o) {
+    await new Promise<void>((resolve) => o.signal.addEventListener("abort", () => resolve(), { once: true }));
+    yield { type: "text", text: "late" };
+  };
+  const { agent, id, pushes } = setup(response);
+  agent.send(id, "delete me", []);
+  agent.remove(id);
+  const deleted = pushes.length;
+  await Bun.sleep(20);
+  expect(store.get(id)).toBeUndefined();
+  expect(pushes.length).toBe(deleted);
+});
+
+test("one peer failing does not cancel the other", async () => {
+  const calls = new Map<string, number>();
+  const response: typeof respond = async function* (o) {
+    if (o.session.endsWith("shiro-1")) throw new Error("peer failure");
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (!n) yield item("send_message", { text: "still working" });
+  };
+  const { agent, id } = setup(response);
+  agent.send(id, "continue", []);
+  await until(() => !agent.open(id)!.meta.running);
+  const messages = store.get(id)!.messages;
+  expect(messages.some((m) => m.role === "assistant" && m.error === "peer failure")).toBe(true);
+  expect(messages.some((m) => m.role === "assistant" && m.agent === "shiro-2" && m.parts.some((p) => p.type === "say"))).toBe(true);
+  agent.remove(id);
+});
+
+test("shared workspace side effects execute serially even when both are approved", async () => {
+  const calls = new Map<string, number>();
+  const response: typeof respond = async function* (o) {
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (!n) {
+      const peer = o.session.split(":").at(-1)!;
+      yield item("bash", { command: `printf '${peer}-start\n' >> '${dir}/effects.log'; sleep 0.02; printf '${peer}-end\n' >> '${dir}/effects.log'` });
+    }
+  };
+  const { agent, id, pushes } = setup(response);
+  agent.send(id, "test serialization", []);
+  const pending = () => pushes.flatMap((p) => p.type === "ev" && p.ev.t === "tool_status" && p.ev.status === "awaiting" ? [p.ev.id] : []);
+  await until(() => pending().length === 2);
+  for (const call of pending()) expect(agent.approve(id, call, true)).toBe(true);
+  await until(() => !agent.open(id)!.meta.running);
+  const lines = (await Bun.file(`${dir}/effects.log`).text()).trim().split("\n");
+  expect(lines).toEqual(["shiro-1-start", "shiro-1-end", "shiro-2-start", "shiro-2-end"]);
+  agent.remove(id);
+});
+
+test("restart settles every participant; board and named bubbles persist", async () => {
+  const { Database } = await import("bun:sqlite");
+  const response: typeof respond = async function* () {};
+  const { agent, id } = setup(response);
+  const c = store.get(id)!;
+  c.messages = [
+    { id: "one", role: "assistant", agent: "shiro-1", model: "test", status: "streaming", parts: [] },
+    { id: "two", role: "assistant", agent: "shiro-2", model: "test", status: "streaming", parts: [{ type: "say", id: "say", text: "saved" }] },
+  ];
+  c.board = { tasks: [], notes: [{ agent: "shiro-1", text: "evidence" }] };
+  store.save(c);
+  const db = new Database(`${dir}/test.db`, { readonly: true });
+  const row = db.query<{ messages: string; board: string }, [string]>("SELECT messages, board FROM conversations WHERE id = ?").get(id)!;
+  expect(JSON.parse(row.messages)[1].agent).toBe("shiro-2");
+  expect(JSON.parse(row.board).notes[0].text).toBe("evidence");
+  db.close();
+  expect(agent.open(id)!.messages.filter((m) => m.role === "assistant").every((m) => m.role === "assistant" && m.status === "stopped")).toBe(true);
+  agent.remove(id);
+});
+
+test("runaway tool loops hit a bounded limit", async () => {
+  let calls = 0;
+  const response: typeof respond = async function* () {
+    calls++;
+    yield item("team", { action: "read", id: "", text: "" });
+  };
+  const { agent, id } = setup(response);
+  agent.send(id, "loop", []);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(calls).toBe(80);
+  expect(store.get(id)!.messages.filter((m) => m.role === "assistant").every((m) => m.role === "assistant" && m.status === "error" && m.error?.includes("40"))).toBe(true);
+  agent.remove(id);
+});
+
+test("shared board snapshots stream task, note and status updates and remain immutable", async () => {
+  const calls = new Map<string, number>();
+  const tasks = new Map<string, string>();
+  const response: typeof respond = async function* (o) {
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (n === 0) yield item("team", { action: "claim", id: "", text: "" });
+    if (n === 1) {
+      tasks.set(o.session, JSON.parse((o.input.at(-1) as { output: string }).output).id);
+      yield item("team", { action: "publish", id: "", text: "[failure] attempted check; observed error; cause unknown" });
+    }
+    if (n === 2) yield item("team", { action: "complete", id: tasks.get(o.session), text: "verification result" });
+  };
+  const { agent, id, pushes } = setup(response);
+  agent.send(id, "publish context", []);
+  await until(() => !agent.open(id)!.meta.running);
+  const boards = pushes.flatMap((p) => p.type === "ev" && p.ev.t === "board" ? [p.ev.board] : []);
+  expect(boards.length).toBeGreaterThan(4);
+  expect(boards[0]?.notes).toEqual([]);
+  expect(boards[0]?.statuses?.["shiro-1"]).toBe("running");
+  expect(boards.at(-1)?.statuses).toEqual({ "shiro-1": "finished", "shiro-2": "finished" });
+  expect(boards.at(-1)?.tasks.every((t) => t.done && t.result === "verification result")).toBe(true);
+  expect(agent.open(id)!.board.notes.length).toBe(2);
+  expect(store.get(id)!.items.at(-1)).toMatchObject({ role: "assistant" });
+  const { apply } = await import("./shared");
+  const msgs = agent.open(id)!.messages;
+  expect(apply(msgs, { t: "board", board: boards[0]! })).toBe(msgs);
+  agent.remove(id);
+});
+
+test("peer bubbles reach the next prompt via shared context without leaking private tool history", async () => {
+  const said = Promise.withResolvers<void>();
+  const calls = new Map<string, number>();
+  let observed = false;
+  const response: typeof respond = async function* (o) {
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (o.session.endsWith("shiro-1")) {
+      if (n === 0) yield item("send_message", { text: "peer evidence ready" });
+      else said.resolve();
+    } else if (n === 0) {
+      // The first prompt was already taken; only the NEXT request can see this note.
+      await said.promise;
+      yield item("team", { action: "read", id: "", text: "" });
+    } else {
+      observed = true;
+      expect(o.instructions).toContain("Chat: peer evidence ready");
+      expect(o.instructions).toContain("shiro-1");
+      const privateCalls = o.input.filter((i) => i.type === "function_call");
+      expect(privateCalls).toHaveLength(1);
+      expect(privateCalls[0]).toMatchObject({ name: "team" });
+      expect(o.input.some((i) => "role" in i && i.role === "assistant")).toBe(false);
+    }
+  };
+  const { agent, id } = setup(response);
+  agent.send(id, "share findings", []);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(observed).toBe(true);
+  expect(store.get(id)!.items).toContainEqual({ role: "assistant", content: "[shiro-1] peer evidence ready" });
+  agent.remove(id);
+});
+
+test("malformed and unknown calls keep error results in their own worker history", async () => {
+  const calls = new Map<string, number>();
+  const results: string[] = [];
+  const response: typeof respond = async function* (o) {
+    if (o.session.endsWith("shiro-2")) return;
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (n > 0) results.push((o.input.at(-1) as { output: string }).output);
+    if (n === 0) {
+      yield { type: "item", item: { type: "function_call", call_id: "bad-json", name: "read_file", arguments: "[]" } };
+    } else if (n === 1) yield item("nonexistent_tool", {});
+    else if (n === 2) yield item("send_message", { text: "" });
+  };
+  const { agent, id } = setup(response);
+  agent.send(id, "validate calls", []);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(results).toEqual([
+    "error: arguments are not a JSON object",
+    "error: unknown tool nonexistent_tool",
+    "error: text is empty",
+  ]);
+  const parts = store.get(id)!.messages.flatMap((m) => m.role === "assistant" ? m.parts : []);
+  const tools = parts.filter((p) => p.type === "tool");
+  expect(tools).toHaveLength(2); // Invalid send_message stays silent, just like a valid one.
+  expect(tools.every((p) => p.status === "error" && p.output?.startsWith("error: "))).toBe(true);
+  expect(parts.some((p) => p.type === "say")).toBe(false);
+  agent.remove(id);
+});

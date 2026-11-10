@@ -55,7 +55,7 @@ export type ToolPart = {
 export type ReasoningPart = { type: "reasoning"; text: string; done: boolean };
 /** A chat bubble the agent sent with send_message. `reaction` is the user's. */
 export type SayPart = { type: "say"; id: string; text: string; reaction?: string };
-/** Text the model wrote outside send_message. The user does not receive it; it shows as a note among the steps. */
+/** Text the model wrote outside send_message. Stored for diagnostics, but not rendered by the chat UI. */
 export type TextPart = { type: "text"; text: string };
 export type Part = ReasoningPart | TextPart | ToolPart | SayPart;
 
@@ -65,6 +65,7 @@ export type AssistantMessage = {
   id: string;
   role: "assistant";
   model: string;
+  agent?: string;
   parts: Part[];
   status: "streaming" | "done" | "stopped" | "error";
   error?: string;
@@ -83,9 +84,13 @@ export type ConvMeta = {
 export type Settings = Pick<ConvMeta, "model" | "effort" | "autoApprove">;
 export type ConvView = ConvMeta & { running: boolean };
 
-export type Ev =
+export type Task = { id: string; text: string; owner?: string; done: boolean; result?: string };
+export type Board = { tasks: Task[]; notes: { agent: string; text: string }[]; statuses?: Record<string, string> };
+
+export type Ev = { message?: string } & (
+  | { t: "board"; board: Board }
   | { t: "user"; msg: UserMessage }
-  | { t: "assistant"; id: string; model: string }
+  | { t: "assistant"; id: string; model: string; agent?: string }
   | { t: "reasoning_delta"; text: string }
   | { t: "reasoning_end" }
   | { t: "text_delta"; text: string }
@@ -96,7 +101,8 @@ export type Ev =
   | { t: "truncate"; at: number }
   | { t: "say"; id: string; text: string }
   /** A reaction on a user message (from the agent) or on a bubble (from the user). null removes it. */
-  | { t: "react"; target: string; emoji: string | null };
+  | { t: "react"; target: string; emoji: string | null }
+);
 
 export type Account = { email?: string; plan?: string };
 
@@ -109,8 +115,9 @@ export type Push =
 
 /** Pure: returns a new array, leaving the input untouched (React state). */
 export function apply(msgs: Message[], ev: Ev): Message[] {
+  if (ev.t === "board") return msgs;
   if (ev.t === "user") return [...msgs, ev.msg];
-  if (ev.t === "assistant") return [...msgs, { id: ev.id, role: "assistant", model: ev.model, parts: [], status: "streaming" }];
+  if (ev.t === "assistant") return [...msgs, { id: ev.id, role: "assistant", model: ev.model, agent: ev.agent, parts: [], status: "streaming" }];
   if (ev.t === "truncate") return msgs.slice(0, ev.at);
   if (ev.t === "react") {
     const reaction = ev.emoji ?? undefined;
@@ -121,7 +128,8 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
     });
   }
 
-  const last = msgs.at(-1);
+  const at = ev.message ? msgs.findIndex((m) => m.id === ev.message) : msgs.length - 1;
+  const last = msgs[at];
   if (last?.role !== "assistant") return msgs;
   const parts = [...last.parts];
   const tail = parts.at(-1);
@@ -162,10 +170,10 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
         if (p.type === "tool" && p.status === "running") return { ...p, status: "error", output: p.output ?? "中断されました" };
         return p;
       });
-      return [...msgs.slice(0, -1), { ...last, parts: closed, status: ev.status, error: ev.error }];
+      return msgs.map((m, i) => i === at ? { ...last, parts: closed, status: ev.status, error: ev.error } : m);
     }
   }
-  return [...msgs.slice(0, -1), { ...last, parts }];
+  return msgs.map((m, i) => i === at ? { ...last, parts } : m);
 }
 
 /** What the agent said to the user in a message: its bubbles. Text written outside send_message is never shown. */

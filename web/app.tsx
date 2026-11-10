@@ -7,6 +7,7 @@ import { useLive, useStored, type Settings } from "./sync";
 import { Icon, IconButton } from "./ui";
 import { useLinger } from "./motion";
 import { Composer, SettingsPicker, imageFiles, type ComposerHandle } from "./composer";
+import { ContextPage } from "./context";
 import { Thread } from "./thread";
 import { Sidebar } from "./sidebar";
 import { Empty } from "./empty";
@@ -138,13 +139,16 @@ function App() {
             {showThread && <span className="who-title" key={conv.meta.id}>{conv.meta.title}</span>}
           </h1>
           <div className="top-actions">
-            {srv && <SettingsPicker settings={settings} jev={srv.jev} auto={autoApproving} onChange={updateSettings} />}
+            {!live.contextPage && srv && <SettingsPicker settings={settings} jev={srv.jev} auto={autoApproving} onChange={updateSettings} />}
+            {live.currentId && <button type="button" className="btn small" aria-pressed={live.contextPage} onClick={() => live.contextPage ? live.open(live.currentId) : live.openContext()}>{live.contextPage ? "チャット" : "共有文脈"}</button>}
             <IconButton icon="compose" label="新しい会話" onClick={newChat} />
           </div>
         </header>
         {!live.online && <p className="offline" role="status">サーバーとの接続が切れています。再接続しています</p>}
 
-        {showThread ? (
+        {live.contextPage && conv ? (
+          <ContextPage board={conv.board} running={conv.meta.running} title={conv.meta.title} />
+        ) : showThread ? (
           <>
             <Thread
               key={conv.meta.id}
@@ -169,7 +173,7 @@ function App() {
             }}
           />
         )}
-        <div className="dock">{composerEl}</div>
+        {!live.contextPage && <div className="dock">{composerEl}</div>}
       </main>
 
       {dragging && (

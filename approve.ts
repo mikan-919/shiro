@@ -7,7 +7,12 @@ import type { Judge } from "./shared";
 const API = process.env.SHIRO_JEV_URL ?? "https://api.typesafe.ai/v1/systemone";
 // Pinned: the thresholds below were measured against this version, and "jev-latest" moves.
 const MODEL = process.env.SHIRO_JEV_MODEL ?? "jev-1.14.0";
-const THRESHOLD = 0.9;
+// Local session history (jev-1.14, 2026-11-10): ordinary test/typecheck commands scored
+// 0.50-0.73 for reversibility and as low as 0.34 for task relevance. Requiring 0.9 for both
+// rejected them all. Task relevance is especially low for terse continuation requests;
+// it is not a safety score. Keep the static rules and read-only threshold unchanged.
+const REVERSIBLE_THRESHOLD = 0.5;
+const TASK_THRESHOLD = 0.3;
 // Measured against jev-1.14: pure reads scored 0.87-0.98 (git status is the low one: it may refresh the index),
 // state-changing commands 0.06 or less. 0.8 keeps git status in without coming near the writes.
 const READ_THRESHOLD = 0.8;
@@ -104,14 +109,14 @@ export async function judge(command: string, project: string, task: string, sign
     const serves = j.answers?.serves_task?.noul;
     const valid = (v: unknown): v is number => typeof v === "number" && v >= 0 && v <= 1;
     if (!valid(readOnly) || !valid(reversible) || !valid(serves)) return { ok: false, by: "error", reason: "Jev の応答を読み取れませんでした" };
-    const ok = readOnly >= READ_THRESHOLD || (reversible >= THRESHOLD && serves >= THRESHOLD);
+    const ok = readOnly >= READ_THRESHOLD || (reversible >= REVERSIBLE_THRESHOLD && serves >= TASK_THRESHOLD);
     return {
       ok,
       by: "jev",
       readOnly,
       reversible,
       servesTask: serves,
-      reason: ok ? undefined : reversible < THRESHOLD ? "取り消せる操作だと判定できませんでした" : "依頼に沿った操作だと判定できませんでした",
+      reason: ok ? undefined : reversible < REVERSIBLE_THRESHOLD ? "取り消せる操作だと判定できませんでした" : "依頼に沿った操作だと判定できませんでした",
     };
   } catch (e) {
     if (signal.aborted) throw e;

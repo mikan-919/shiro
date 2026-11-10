@@ -1,13 +1,15 @@
 // The conversation runtime: turns, approvals and the event stream every open tab follows.
 import type { ResponseFunctionToolCall, ResponseInputItem } from "openai/resources/responses/responses";
 import * as store from "./store";
+import { createBoard } from "./team";
 import { respond } from "./codex";
-import { available, describe, errorOutput, parseArgs, summarize, usable } from "./tools";
+import { available, describe, parseArgs, summarize } from "./tools";
 import { firstLine } from "./toolkit";
-import { jevEnabled, judge } from "./approve";
-import { apply, assistantText, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type Settings, type ToolPart } from "./shared";
+import { instructions, teamInstructions } from "./instructions";
+import { createToolRunner } from "./tool-runner";
+import { apply, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type Settings, type ToolPart } from "./shared";
 
-type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void> };
+type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void>; deleted?: boolean };
 
 /** The id the model sees for a user message: short enough to quote back to the react tool. */
 const shortId = (id: string) => id.replace(/-/g, "").slice(0, 8);
@@ -19,19 +21,13 @@ function withView(p: ToolPart): ToolPart {
   return { ...p, view: describe(p.name, a), summary: summarize(p.name, a, p.status, p.output) };
 }
 
-export function createAgent({ publish, cwd, defaultModel }: { publish: (p: Push) => void; cwd: string; defaultModel: string }) {
+export function createAgent({ publish, cwd, defaultModel, response = respond }: { response?: typeof respond; publish: (p: Push) => void; cwd: string; defaultModel: string }) {
   const turns = new Map<string, Turn>();
   const seqs = new Map<string, number>();
   // ponytail: in memory, so reactions made just before a restart are not told to the model; persist if that matters
   const notes = new Map<string, string[]>();
 
   const view = (m: ConvMeta): ConvView => ({ ...m, running: turns.has(m.id) });
-  const instructions = () => `You are shiro, a coding and everyday agent running on the user's own machine in ${cwd}.
-You and the user talk in a messaging app. The user sees only what you send with send_message; anything else you write stays private.
-Write the way a person texts a friend: one or two sentences per message, a few messages at most per reply. No headings, tables or long lists; give the gist and offer details if the user wants them.
-Send a short message before long work so the user knows what you are doing. React to the user's messages with react when it feels natural.
-Each user message starts with its id, like [#1a2b3c4d]. Use the tools to inspect and change files and run commands.
-Today is ${new Date().toISOString().slice(0, 10)}. Write in the user's language.`;
 
   function emit(c: store.Conv, ev: Ev) {
     c.messages = apply(c.messages, ev);
@@ -50,8 +46,8 @@ Today is ${new Date().toISOString().slice(0, 10)}. Write in the user's language.
   function load(id: string) {
     const c = store.get(id);
     if (!c || turns.has(id)) return c;
-    const last = c.messages.at(-1);
-    if (last?.role === "assistant" && last.status === "streaming") c.messages = apply(c.messages, { t: "end", status: "stopped" });
+    if (c.board?.statuses) for (const [agent, status] of Object.entries(c.board.statuses)) if (status === "running") c.board.statuses[agent] = "stopped";
+    for (const m of c.messages) if (m.role === "assistant" && m.status === "streaming") c.messages = apply(c.messages, { t: "end", message: m.id, status: "stopped" });
     c.messages = c.messages.map((m): Message =>
       m.role === "assistant" ? { ...m, parts: m.parts.map((p): Part => (p.type === "tool" ? withView(p) : p)) } : m,
     );
@@ -77,98 +73,102 @@ Today is ${new Date().toISOString().slice(0, 10)}. Write in the user's language.
         ? { role: "user", content: [{ type: "input_text", text: userText }, ...images.map((image_url) => ({ type: "input_image" as const, image_url, detail: "auto" as const }))] }
         : { role: "user", content: userText },
     );
-    emit(c, { t: "assistant", id: crypto.randomUUID(), model: c.meta.model });
+    const statuses: Record<string, string> = { "shiro-1": "running", "shiro-2": "running" };
+    const board = createBoard(undefined, () => {
+      if (!turn.deleted) { store.save(c); broadcastBoard(); }
+    });
+    const broadcastBoard = () => emit(c, { t: "board", board: structuredClone(board.state) });
+    board.state.statuses = statuses;
+    c.board = board.state;
+    board.state.tasks.push(
+      { id: "investigate", text: "Investigate the request and propose an approach; publish findings and add concrete subtasks if useful.", done: false },
+      { id: "independent-check", text: "Independently check the request, risks and evidence; verify peer work and contribute a complementary result.", done: false },
+    );
+    broadcastBoard();
     touch(c);
+    const base = structuredClone(c.items);
+    // Shared workspace: serialize side effects, including arbitrary shell commands.
+    let effects = Promise.resolve();
+    async function exclusive<T>(f: () => Promise<T>): Promise<T> {
+      const prev = effects;
+      let release!: () => void;
+      effects = new Promise<void>((r) => { release = r; });
+      await prev;
+      try { signal.throwIfAborted(); return await f(); } finally { release(); }
+    }
 
-    const chat = {
-      say: (text: string) => emit(c, { t: "say", id: crypto.randomUUID(), text }),
-      react(messageId: string, emoji: string | null) {
-        const m = c.messages.find((x) => x.role === "user" && shortId(x.id) === messageId);
-        if (m) emit(c, { t: "react", target: m.id, emoji });
-        return !!m;
-      },
-    };
+    async function worker(agent: string) {
+      const message = crypto.randomUUID();
+      const history = structuredClone(base);
+      const workerEmit = (ev: Ev) => { if (!turn.deleted) emit(c, { ...ev, message }); };
+      workerEmit({ t: "assistant", id: message, model: c.meta.model, agent });
+      const team = board.forAgent(agent);
 
-    async function approved(id: string, request: string) {
-      if (c.meta.autoApprove && jevEnabled()) {
-        emit(c, { t: "tool_status", id, status: "judging" });
-        const verdict = await judge(request, cwd, text, signal);
-        emit(c, { t: "tool_judge", id, judge: verdict });
-        if (verdict.ok) return true;
-      }
-      const ok = await new Promise<boolean>((resolve) => {
-        turn.approvals.set(id, resolve);
-        emit(c, { t: "tool_status", id, status: "awaiting" });
+      const chat = {
+        say(text: string) {
+          signal.throwIfAborted();
+          const id = crypto.randomUUID();
+          // Each bubble is appended when sent, preserving interleaved group-chat order.
+          emit(c, { t: "assistant", id, model: c.meta.model, agent });
+          emit(c, { t: "say", message: id, id: crypto.randomUUID(), text });
+          emit(c, { t: "end", message: id, status: "done" });
+          c.items.push({ role: "assistant", content: `[${agent}] ${text}` });
+          team.act("publish", "", `Chat: ${text}`);
+        },
+        react(messageId: string, emoji: string | null) {
+          const m = c.messages.find((x) => x.role === "user" && shortId(x.id) === messageId);
+          if (m) workerEmit({ t: "react", target: m.id, emoji });
+          return !!m;
+        },
+      };
+
+      const call = createToolRunner({
+        message, signal, emit: workerEmit, chat, team, settings: () => c.meta,
+        approvals: turn.approvals, cwd, task: text, exclusive,
       });
-      turn.approvals.delete(id);
-      return ok;
-    }
 
-    async function call({ call_id: id, name, arguments: json }: ResponseFunctionToolCall): Promise<string> {
-      const parsed = parseArgs(json);
-      const a = parsed ?? {};
-      const tool = usable(name);
-      const ctx = { signal, model: c.meta.model, chat };
-      if (tool?.silent) {
-        try {
-          if (!parsed) throw new Error("arguments are not a JSON object");
-          return await tool.run(a, ctx);
-        } catch (e) {
-          if (signal.aborted) throw e;
-          return errorOutput((e as Error).message);
-        }
-      }
-      const view = describe(name, a);
-      emit(c, { t: "tool", id, name, args: json, view, summary: summarize(name, a, "running") });
       try {
-        if (!tool) throw new Error(`unknown tool ${name}`);
-        if (!parsed) throw new Error("arguments are not a JSON object");
-        if (view.request !== undefined && !(await approved(id, view.request))) {
-          emit(c, { t: "tool_status", id, status: "denied" });
-          return "user denied this command";
+        for (let round = 0; ; round++) {
+          signal.throwIfAborted();
+          if (round >= 40) throw new Error("チームの実行上限（40ラウンド）に達しました");
+          const calls: ResponseFunctionToolCall[] = [];
+          const events = response({
+            model: c.meta.model, effort: c.meta.effort, instructions: instructions(cwd) + teamInstructions(agent, board.snapshot(), statuses), input: history,
+            tools: available().map((t) => t.def), session: `${c.meta.id}:${agent}`, signal,
+          });
+          for await (const ev of events) {
+            signal.throwIfAborted();
+            if (ev.type === "reasoning") workerEmit({ t: "reasoning_delta", text: ev.text });
+            else if (ev.type === "reasoning_end") workerEmit({ t: "reasoning_end" });
+            else if (ev.type === "text") workerEmit({ t: "text_delta", text: ev.text });
+            else {
+              history.push(ev.item);
+              if (ev.item.type === "function_call") calls.push(ev.item as ResponseFunctionToolCall);
+            }
+          }
+          if (!calls.length) break;
+          for (const fc of calls) history.push({ type: "function_call_output", call_id: fc.call_id, output: await call(fc) });
         }
-        emit(c, { t: "tool_status", id, status: "running" });
-        const output = await tool.run(a, ctx);
-        emit(c, { t: "tool_status", id, status: "done", output, summary: summarize(name, a, "done", output) });
-        return output;
+        signal.throwIfAborted();
+        workerEmit({ t: "end", status: "done" });
       } catch (e) {
-        if (signal.aborted) throw e;
-        const output = errorOutput((e as Error).message);
-        emit(c, { t: "tool_status", id, status: "error", output, summary: summarize(name, a, "error", output) });
-        return output;
+        statuses[agent] = signal.aborted ? "stopped" : "error";
+        workerEmit(signal.aborted ? { t: "end", status: "stopped" } : { t: "end", status: "error", error: (e as Error).message });
+      } finally {
+        if (statuses[agent] === "running") statuses[agent] = "finished";
+        for (const task of board.state.tasks) if (task.owner === agent && !task.done) delete task.owner;
+        if (!turn.deleted) { store.save(c); broadcastBoard(); }
       }
     }
-
     try {
-      while (true) {
-        const calls: ResponseFunctionToolCall[] = [];
-        const events = respond({
-          model: c.meta.model, effort: c.meta.effort, instructions: instructions(), input: c.items,
-          tools: available().map((t) => t.def), session: c.meta.id, signal,
-        });
-        for await (const ev of events) {
-          if (ev.type === "reasoning") emit(c, { t: "reasoning_delta", text: ev.text });
-          else if (ev.type === "reasoning_end") emit(c, { t: "reasoning_end" });
-          else if (ev.type === "text") emit(c, { t: "text_delta", text: ev.text });
-          else {
-            c.items.push(ev.item);
-            if (ev.item.type === "function_call") calls.push(ev.item as ResponseFunctionToolCall);
-          }
-        }
-        if (!calls.length) break;
-        for (const fc of calls) c.items.push({ type: "function_call_output", call_id: fc.call_id, output: await call(fc) });
-      }
-      emit(c, { t: "end", status: "done" });
-    } catch (e) {
-      // Drop half-finished tool calls so the history stays valid, but keep what the user already read.
-      c.items.length = itemIndex + 1;
-      const last = c.messages.at(-1);
-      const said = last?.role === "assistant" ? assistantText(last) : "";
-      if (said) c.items.push({ role: "assistant", content: said } satisfies ResponseInputItem);
-      emit(c, signal.aborted ? { t: "end", status: "stopped" } : { t: "end", status: "error", error: (e as Error).message });
+      await Promise.allSettled([worker("shiro-1"), worker("shiro-2")]);
     } finally {
       turns.delete(c.meta.id);
-      touch(c);
+      if (!turn.deleted) {
+        const findings = board.state.notes.filter((n) => !n.text.startsWith("Chat: "));
+        if (findings.length) c.items.push({ role: "assistant", content: `Team findings (reported by peers; verify before reuse): ${JSON.stringify(findings)}` });
+        touch(c);
+      }
     }
   }
 
@@ -177,7 +177,7 @@ Today is ${new Date().toISOString().slice(0, 10)}. Write in the user's language.
 
     open(id: string) {
       const c = load(id);
-      return c && { meta: view(c.meta), messages: c.messages, seq: seqs.get(id) ?? 0 };
+      return c && { meta: view(c.meta), messages: c.messages, board: c.board ?? { tasks: [], notes: [] }, seq: seqs.get(id) ?? 0 };
     },
 
     create(s: Partial<Settings>): ConvView {
@@ -196,7 +196,8 @@ Today is ${new Date().toISOString().slice(0, 10)}. Write in the user's language.
     },
 
     remove(id: string) {
-      turns.get(id)?.ctl.abort();
+      const turn = turns.get(id);
+      if (turn) { turn.deleted = true; turn.ctl.abort(); }
       seqs.delete(id);
       notes.delete(id);
       store.remove(id);

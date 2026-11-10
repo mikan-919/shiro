@@ -1,7 +1,9 @@
 import type { ToolStatus, ToolView } from "./shared";
 import { def, firstLine, str, type Args, type Tool } from "./toolkit";
 import { react, sendMessage } from "./chat";
+import { teamTool } from "./team";
 import { searchTool } from "./search";
+import { fetchTool } from "./fetch";
 
 const lineCount = (s: string) => (s ? s.replace(/\n$/, "").split("\n").length : 0);
 
@@ -60,7 +62,7 @@ const bash: Tool = {
   },
 };
 
-const ALL = [sendMessage, react, readFile, writeFile, editFile, bash, searchTool];
+const ALL = [sendMessage, react, readFile, writeFile, editFile, bash, searchTool, fetchTool, teamTool];
 
 const enabled = (t: Tool) => t.enabled?.() ?? true;
 export const available = () => ALL.filter(enabled);
