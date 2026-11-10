@@ -112,6 +112,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
     async function worker(agent: string, started: () => void) {
       statuses[agent] = "running";
       active++;
+      log(agent, "start", {});
       if (!turn.deleted) { store.save(c); broadcastBoard(); }
       const message = crypto.randomUUID();
       const history = structuredClone(base);

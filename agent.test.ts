@@ -373,11 +373,11 @@ test("the substrate log keeps every coordination event after the board resets an
   }
   agent.remove(id);
   const log = store.substrate(id);
-  expect(log.map((g) => `${g.agent}:${g.kind}`)).toEqual(Array(2).fill(["user:user", "shiro-1:publish", "shiro-1:publish", "shiro-1:tool"]).flat());
+  expect(log.map((g) => `${g.agent}:${g.kind}`)).toEqual(Array(2).fill(["user:user", "shiro-1:start", "shiro-1:publish", "shiro-1:publish", "shiro-1:tool"]).flat());
   expect(log.filter((g) => (g.body as { text?: string }).text?.startsWith("[type-gap]"))).toHaveLength(2);
   expect(new Set(log.map((g) => g.turn)).size).toBe(2);
   expect(log.every((g) => g.v === store.SUBSTRATE_VERSION)).toBe(true);
-  expect(log[3]!.body).toMatchObject({ name: "send_message", output: expect.any(String) });
+  expect(log[4]!.body).toMatchObject({ name: "send_message", output: expect.any(String) });
 });
 
 test("peers start only for unclaimed tasks: chat runs one peer, and a task added later wakes one more", async () => {
@@ -418,4 +418,15 @@ test("peers start only for unclaimed tasks: chat runs one peer, and a task added
   await until(() => !agent.open(id)!.meta.running);
   expect(started).toEqual(["shiro-1", "shiro-2"]);
   agent.remove(id);
+});
+
+test("the report counts started peers, queued tasks and labelled notes per turn", async () => {
+  const { summarize } = await import("./report");
+  const g = (turn: string, agent: string, kind: string, text = "") => ({ seq: 0, at: 0, v: 0, conv: "c", turn, agent, kind, body: { text } });
+  const rows = summarize([
+    g("t1", "user", "user"), g("t1", "shiro-1", "start"), g("t1", "shiro-1", "add"), g("t1", "shiro-1", "add"), g("t1", "shiro-2", "start"),
+    g("t1", "shiro-2", "publish", " [Type-Gap] wanted a promise"), g("t1", "shiro-1", "publish", "[failure] exit 1"), g("t1", "shiro-1", "publish", "Chat: [type-gap] quoted"),
+    g("t2", "user", "user"), g("t2", "shiro-1", "start"), g("t2", "shiro-1", "tool"),
+  ]);
+  expect(rows.map((t) => [t.peers.size, t.add, t.tool, t["type-gap"], t.failure])).toEqual([[2, 2, 0, 1, 1], [1, 0, 1, 0, 0]]);
 });

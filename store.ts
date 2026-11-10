@@ -38,8 +38,8 @@ export function append(g: { conv: string; turn: string; agent: string; kind: str
   db.query("INSERT INTO substrate (at, v, conv, turn, agent, kind, body) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .run(Date.now(), SUBSTRATE_VERSION, g.conv, g.turn, g.agent, g.kind, JSON.stringify(g.body));
 }
-export function substrate(conv: string): Gist[] {
-  return db.query<Omit<Gist, "body"> & { body: string }, [string]>("SELECT * FROM substrate WHERE conv = ? ORDER BY seq").all(conv)
+export function substrate(conv?: string): Gist[] {
+  return db.query<Omit<Gist, "body"> & { body: string }, [string | null]>("SELECT * FROM substrate WHERE ?1 IS NULL OR conv = ?1 ORDER BY seq").all(conv ?? null)
     .map((r) => ({ ...r, body: JSON.parse(r.body) }));
 }
 
