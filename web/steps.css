@@ -107,7 +107,7 @@ pre.diff .add::before { content: "+ "; color: var(--pine); }
 .steps-scroll {
   --fade-top: 0px;
   --fade-bottom: 0px;
-  max-height: 320px;
+  max-height: calc(3 * 52px); /* about three steps: a 34px head plus its one-line preview each */
   overflow-y: auto;
   overflow-anchor: none; /* the glide owns the scroll position; anchoring would fight it */
   margin: 2px 0;
