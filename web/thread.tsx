@@ -3,7 +3,7 @@ import { assistantText, MODELS, speaksInText, type AssistantMessage, type Reason
 import type { Conversation } from "./sync";
 import { CopyButton, Icon, IconButton, usePopover } from "./ui";
 import { useFollowBottom } from "./motion";
-import { SmoothMd } from "./markdown";
+import { Md } from "./markdown";
 import { StepChain } from "./steps";
 import "./thread.css";
 
@@ -55,13 +55,13 @@ function UserRow({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh: b
 }
 
 /** One of the agent's bubbles. `onReact` is absent for bubbles that cannot take a reaction (old plain-text replies). */
-function Bubble({ text, live, reaction, onReact }: { text: string; live: boolean; reaction?: string; onReact?: (emoji: string | null) => void }) {
+function Bubble({ text, reaction, onReact }: { text: string; reaction?: string; onReact?: (emoji: string | null) => void }) {
   const pick = usePopover();
   return (
     <div className="row them">
       <div className="bubble-line">
         <div className="bubble">
-          <div className="prose"><SmoothMd text={text} live={live} /></div>
+          <div className="prose"><Md text={text} /></div>
           <Reaction emoji={reaction} />
         </div>
         <div className="row-tools" ref={pick.ref}>
@@ -120,7 +120,7 @@ function AssistantRows({ m, fresh, isLast, busy, onApprove, onReact, onRegenerat
     <div className={`msg ${fresh ? "is-new" : ""}`}>
       {blocks(m).map((b) =>
         b.kind === "bubble" ? (
-          <Bubble key={b.key} text={b.text} live={live} reaction={b.reaction} onReact={b.sayId ? (e) => onReact(b.sayId!, e) : undefined} />
+          <Bubble key={b.key} text={b.text} reaction={b.reaction} onReact={b.sayId ? (e) => onReact(b.sayId!, e) : undefined} />
         ) : (
           <StepChain key={b.key} parts={b.parts} onApprove={onApprove} />
         ),

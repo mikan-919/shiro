@@ -5,7 +5,7 @@ export const sendMessage: Tool = {
   def: def(
     "send_message",
     "Send a chat message to the user. This is the only way the user sees anything you write. " +
-      "Write like texting: short messages, several in a row for a longer reply. Markdown works.",
+      "Write like texting a person: one or two sentences per message. Split a longer reply into a few messages instead of one long one.",
     { text: "The message" },
   ),
   silent: true,
