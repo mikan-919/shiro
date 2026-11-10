@@ -1,9 +1,13 @@
 import type { ToolStatus, ToolView } from "./shared";
-import { def, firstLine, str, type Args, type Tool } from "./toolkit";
+import { def, firstLine, str, toolDeclaration, type Args, type Tool } from "./toolkit";
+import { codeModeEnabled, executeCode } from "./codemode";
 import { react, sendMessage } from "./chat";
 import { teamTool } from "./team";
 import { searchTool } from "./search";
 import { fetchTool } from "./fetch";
+import { fileTools } from "./filesystem";
+import { open } from "node:fs/promises";
+import { constants } from "node:fs";
 
 const lineCount = (s: string) => (s ? s.replace(/\n$/, "").split("\n").length : 0);
 
@@ -12,9 +16,56 @@ const LIMIT = 50_000;
 const cap = (s: string) => (s.length > LIMIT ? `${s.slice(0, LIMIT)}\n… (${s.length - LIMIT} chars truncated)` : s);
 
 const readFile: Tool = {
-  def: def("read_file", "Read a text file.", { path: "File path" }),
+  def: {
+    type: "function", name: "read_file", strict: false,
+    description: "Read a UTF-8 text file, optionally selecting inclusive 1-based start_line/end_line. Returns original text without added line numbers. Output capped at 50,000 characters; scans at most 8MiB, reporting truncation. Read-only; no shell or approval needed.",
+    parameters: {
+      type: "object", properties: {
+        path: { type: "string", description: "File path" },
+        start_line: { type: "integer", description: "First line, inclusive, starting at 1; default 1" },
+        end_line: { type: "integer", description: "Last line, inclusive; default end of file" },
+      }, required: ["path"], additionalProperties: false,
+    },
+  },
   view: (a) => ({ label: "読み込み", icon: "file", target: str(a.path) }),
-  run: async (a) => cap(await Bun.file(str(a.path)).text()),
+  run: async (a, { signal }) => {
+    const rawStart = a.start_line ?? 1, rawEnd = a.end_line ?? Infinity;
+    if (typeof rawStart !== "number" || !Number.isSafeInteger(rawStart) || rawStart < 1) throw new Error("start_line must be a positive safe integer");
+    if (typeof rawEnd !== "number" || (a.end_line !== undefined && !Number.isSafeInteger(rawEnd)) || rawEnd < rawStart) throw new Error("end_line must be a safe integer >= start_line");
+    const start: number = rawStart, end: number = rawEnd;
+    signal.throwIfAborted();
+    // Nonblocking open prevents a named pipe from hanging before the regular-file check.
+    const file = await open(str(a.path), constants.O_RDONLY | constants.O_NONBLOCK);
+    try {
+      if (!(await file.stat()).isFile()) throw new Error("read_file requires a regular file");
+      const buffer = Buffer.alloc(64 * 1024), decoder = new TextDecoder();
+      const scanLimit = 8 * 1024 * 1024;
+      let scanned = 0, line = 1, output = "";
+      function consume(text: string): string | undefined {
+        let offset = 0;
+        while (offset < text.length) {
+          const newline = text.indexOf("\n", offset);
+          const next = newline < 0 ? text.length : newline + 1;
+          if (line >= start) {
+            const part = text.slice(offset, next);
+            if (output.length + part.length > LIMIT) return output + part.slice(0, LIMIT - output.length) + "\n… (output truncated at 50,000 characters)";
+            output += part;
+          }
+          if (newline >= 0 && line++ >= end) return output;
+          offset = next;
+        }
+      }
+      while (scanned < scanLimit) {
+        signal.throwIfAborted();
+        const { bytesRead } = await file.read(buffer, 0, Math.min(buffer.length, scanLimit - scanned), null);
+        if (!bytesRead) return consume(decoder.decode()) ?? output;
+        scanned += bytesRead;
+        const result = consume(decoder.decode(buffer.subarray(0, bytesRead), { stream: true }));
+        if (result !== undefined) return result;
+      }
+      return consume(decoder.decode()) ?? (output + "\n… (scan truncated at 8MiB; requested range may be incomplete)");
+    } finally { await file.close(); }
+  },
   summary: (_, out) => (out === undefined ? undefined : firstLine(out) || "空のファイル"),
 };
 
@@ -62,7 +113,28 @@ const bash: Tool = {
   },
 };
 
-const ALL = [sendMessage, react, readFile, writeFile, editFile, bash, searchTool, fetchTool, teamTool];
+const executeCodeTool: Tool = {
+  get def() {
+    return def("execute_code",
+      "Run JavaScript in an isolated local sandbox to combine tool calls, loops, filtering and parallel reads in one model turn. " +
+      "Pass an async function expression, e.g. async () => { const text = await tools.read_file({path: 'README.md'}); return text.slice(0, 500); }. " +
+      "Return only what you need: the return value and console logs are sent back. Tool results are strings (failures start with 'error: '). " +
+      "Only the tools API below is available for host access; no direct filesystem, network, environment or process access. " +
+      "Each inner tool call retains normal approval, UI, cancellation and side-effect ordering. execute_code cannot call itself. " +
+      "Use plain JavaScript, not TypeScript. The following declarations document tools:\n" +
+      "declare const tools: {\n" + ALL.filter((t) => t !== executeCodeTool && enabled(t)).map(toolDeclaration).join("\n") + "\n};",
+      { code: "An async JavaScript function expression to execute, using await tools.<name>({...})" });
+  },
+  enabled: codeModeEnabled,
+  view: (a) => ({ label: "コード実行", icon: "terminal", target: firstLine(str(a.code)), detail: { kind: "code", text: str(a.code) } }),
+  run: async (a, ctx) => {
+    if (!ctx.callTool) throw new Error("Code Mode requires the tool runner");
+    return executeCode(str(a.code), ctx.callTool, ctx.signal);
+  },
+  summary: (_, out) => out === undefined ? undefined : firstLine(out),
+};
+
+const ALL = [sendMessage, react, readFile, ...fileTools, writeFile, editFile, bash, searchTool, fetchTool, teamTool, executeCodeTool];
 
 const enabled = (t: Tool) => t.enabled?.() ?? true;
 export const available = () => ALL.filter(enabled);

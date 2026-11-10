@@ -6,6 +6,8 @@ export type Args = Record<string, unknown>;
 export type ToolContext = {
   team?: { act(action: string, id: string, text: string): string };
   signal: AbortSignal;
+  /** Dispatch through the runner, never directly through a tool's run method. */
+  callTool?: (name: string, args: Args, signal?: AbortSignal) => Promise<string>;
   /** The model making the call; services that tune results for it (Parallel) take it. */
   model: string;
   /** The conversation the call belongs to. */
@@ -44,6 +46,61 @@ export const def = (name: string, description: string, props: Record<string, str
     additionalProperties: false,
   },
 });
+
+/** Validate the schema subset used by our tools; unsupported schemas fail closed. */
+export function validateArgs(tool: Tool, args: Args): void {
+  function check(schema: unknown, value: unknown, path: string): void {
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) throw new Error(`unsupported schema at ${path}`);
+    const s = schema as Record<string, unknown>;
+    if (Array.isArray(s.enum) && !s.enum.includes(value)) throw new Error(`${path} is not an allowed value`);
+    switch (s.type) {
+      case "string":
+        if (typeof value !== "string") throw new Error(`${path} must be a string`);
+        break;
+      case "boolean":
+        if (typeof value !== "boolean") throw new Error(`${path} must be a boolean`);
+        break;
+      case "number": case "integer":
+        if (typeof value !== "number" || !Number.isFinite(value) || (s.type === "integer" && !Number.isInteger(value))) throw new Error(`${path} must be a ${s.type}`);
+        break;
+      case "array":
+        if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
+        value.forEach((v, i) => check(s.items, v, `${path}[${i}]`));
+        break;
+      case "object": {
+        if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${path} must be an object`);
+        const obj = value as Args;
+        const props = (s.properties ?? {}) as Record<string, unknown>;
+        for (const key of (s.required ?? []) as string[]) {
+          if (!Object.hasOwn(obj, key)) throw new Error(`${path}.${key} is required`);
+        }
+        for (const [key, v] of Object.entries(obj)) {
+          if (Object.hasOwn(props, key)) check(props[key], v, `${path}.${key}`);
+          else if (s.additionalProperties === false) throw new Error(`${path}.${key} is not allowed`);
+          else if (s.additionalProperties && typeof s.additionalProperties === "object") check(s.additionalProperties, v, `${path}.${key}`);
+        }
+        break;
+      }
+      default: throw new Error(`unsupported schema type at ${path}`);
+    }
+  }
+  check(tool.def.parameters, args, "arguments");
+}
+
+/** TypeScript-like declarations for the isolated JavaScript tool API (not executable TS). */
+export function toolDeclaration(tool: Tool): string {
+  function type(schema: unknown): string {
+    const s = (schema ?? {}) as Record<string, unknown>;
+    if (s.type === "array") return `Array<${type(s.items)}>`;
+    if (s.type === "object") {
+      const required = (s.required ?? []) as string[];
+      return `{ ${Object.entries((s.properties ?? {}) as Args).map(([k, v]) => `${JSON.stringify(k)}${required.includes(k) ? "" : "?"}: ${type(v)}`).join("; ")} }`;
+    }
+    if (s.type === "integer") return "number";
+    return ["string", "number", "boolean"].includes(String(s.type)) ? String(s.type) : "unknown";
+  }
+  return `${JSON.stringify(tool.def.name)}: (args: ${type(tool.def.parameters)}) => Promise<string>; // ${tool.def.description ?? ""}`;
+}
 
 export const str = (v: unknown) => (typeof v === "string" ? v : "");
 export const firstLine = (s: string) => s.split("\n").map((l) => l.trim()).find(Boolean) ?? "";

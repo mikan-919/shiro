@@ -24,10 +24,44 @@ bun run index.ts
 - DeLM に着想を得た最大4体の非同期エージェント。起動する数は未確保のタスクの数に従い、雑談や1体で済む依頼では1体だけが動きます。共有ノートとタスクキューを使い、同じチャットに名前付きで発言します。
 - 画像添付、Markdown 表示、会話の編集・再生成。
 - SQLite による会話履歴の保存。
-- エージェント用ツール：ファイルの読み書き・編集（`read_file`、`write_file`、`edit_file`）とシェル実行（`bash`）。
+- エージェント用ツール：ファイルの読み書き・編集（`read_file`、`write_file`、`edit_file`）、ディレクトリ一覧（`list_directory`）、ファイル名・内容検索（`search_files`、`search_text`）とシェル実行（`bash`）。基本の読み取り・検索はシェルやスクリプトを介さず専用ツールで実行します。
 - シェルコマンドは `TYPESAFE_API_KEY` が未設定の場合、実行前に画面で承認します。設定すると、会話の「コマンドの自動承認」がオンの場合に、Jev が読み取り専用、または取り消し可能かつ依頼に沿うと判定したコマンドを自動実行できます。新しい会話ではこの設定は既定でオンです。ルールが危険とみなすコマンドや、Jev が承認しない・判定に失敗したコマンドは、自動実行せずユーザー確認に戻ります。
 - API キー不要の `web_fetch` で公開 URL の HTML・プレーンテキストを取得できます（JavaScript 実行やログイン、PDF は非対応）。
 - `PARALLEL_API_KEY` を設定すると Web 検索ツールが有効になります。検索結果の URL を回答に含めるようエージェントに指示します。
+
+## 基本の読み取り・検索ツール
+
+`read_file({ path, start_line?, end_line? })` は UTF-8 テキストを読みます。行番号は1始まり・両端を含み、省略時はファイル全体が対象です。元の改行を保ち、行番号は追加しません。出力は50,000文字、走査は8 MiBまでで、超過時は切り詰めを明記します。通常ファイルのみ対象です。
+
+`list_directory({ path })` は直下の項目を並べます。隠し項目も含み、ディレクトリは `/`、シンボリックリンクは `@` を付けます。`search_files({ path, pattern })` は `rg --files --glob` でファイルパスを検索します。`search_text({ path, pattern, regex?, glob? })` は `rg` で内容を検索し、`path:line:本文` を返します。既定は文字列の完全一致検索で、`regex: true` なら正規表現として扱います。
+
+検索には PATH 上の [ripgrep（`rg`）](https://github.com/BurntSushi/ripgrep) が必要です。設定ファイルやシェルは使わず固定引数で直接起動し、`rg` がなければエラーにします。通常の ignore・隠しファイル除外は `rg` に従いますが、明示した glob やパスは除外を上書きする場合があります。ディレクトリ内のシンボリックリンクは追跡しません。内容検索はバイナリや2 MiB超のファイルを除外し、1ファイル200一致まで・実行10秒までで出力にも上限があります。一覧・検索の上限超過は出力に明記します。
+
+これらは読み取り専用ツールで、`bash` の承認・Jev 判定を必要としません。Code Mode 内からも同じ API を利用できます。シェル操作の承認や危険操作のブロックは従来どおりです。
+
+## Code Mode（ローカル実行）
+
+複数のツール呼び出しと結果の加工を、モデルが生成した JavaScript にまとめる `execute_code` を追加しています。[Cloudflare Code Mode](https://developers.cloudflare.com/agents/tools/codemode/) の方式に着想を得たローカル実装で、Cloudflare の SDK や Workers への接続は使いません。直接の `read_file` や `bash` も引き続き使えます。
+
+Linux、ユーザー名前空間を利用できる `bubblewrap`（`bwrap`）、`prlimit`（util-linux）、Node.js が必要です。Node.js 26 で検証しています。Node の permission モードなど必要な起動フラグが使えない場合や、OS が名前空間の作成を拒否する場合はエラーになり、隔離を省いた実行には切り替えません。依存コマンドが PATH にあれば既定でツールを公開し、`SHIRO_CODE_MODE=0` で無効化できます。
+
+モデルが渡す `code` は次のような **JavaScript の async 関数式**です。TypeScript の型注釈は使えません。有効なツールの型宣言と説明は `execute_code` のツール説明に含まれます。
+
+```javascript
+async () => {
+  const texts = await Promise.all([
+    tools.read_file({ path: "README.md" }),
+    tools.read_file({ path: "package.json" }),
+  ]);
+  return texts.map((text, i) => ({ file: i, firstLine: text.split("\n")[0] }));
+}
+```
+
+`tools.*` は既存ツールと同じ文字列を返します。すべての呼び出しを await し、必要な結果を return してください。最終出力は `{ result, logs }` の JSON です。ツール失敗は通常 `error: ...`、コマンド拒否は `user denied this command` という文字列になるため、コード側で必要に応じて確認します。
+
+生成コードは別プロセスで実行し、bubblewrap でホーム・作業ディレクトリ・ホストの一時ディレクトリ・環境変数・外部ネットワークから隔離します。読み取り専用のランタイム用ディレクトリ（存在する `/nix/store`、`/usr`、`/bin`、`/lib`、`/lib64` と ld.so キャッシュ）は見えます。Node の `vm` 自体は安全境界として扱いません。追加の Node permission モードで直接のファイル書き込み・子プロセスや Worker の作成を拒否します。ファイル操作や通信が必要な場合はホスト側の `tools.*` を経由します。これらのツールの権限は従来どおりで、特に `bash` はホスト上で動き、既存の承認・Jev 判定を通ります。
+
+承認待ちを含む実行時間は120秒、CPU時間は60秒、仮想アドレス空間は1 GiB、V8ヒープは64 MiBに制限しています。ツール呼び出しは最大100件・同時8件で、コード・RPC・結果・ログにもサイズ制限があります。`execute_code` の再帰呼び出しは禁止です。書き込みとシェルは既存の副作用キューで直列化し、内側の操作も画面と実行トレースに記録します。停止・タイムアウト時には生成コードを強制終了し、未承認・待機中の操作を無効化しますが、すでに完了した副作用の巻き戻しはしません。
 
 ## グループチャットと協調実行
 
@@ -55,6 +89,7 @@ bun run index.ts
 | 変数 | 用途 | 既定値 |
 | --- | --- | --- |
 | `SHIRO_PORT` | Web サーバーのポート | `3000` |
+| `SHIRO_CODE_MODE` | `0` でローカル Code Mode を無効化 | 依存コマンドがある Linux で有効 |
 | `SHIRO_MODEL` | 新しい会話で使う既定モデル | `gpt-6.1-sol`（`shared.ts` のモデル一覧の先頭） |
 | `SHIRO_CODEX_URL` | Codex API の接続先 | `https://chatgpt.com/backend-api/codex` |
 | `SHIRO_DB` | SQLite データベースのパス | `~/.shiro/shiro.db` |
@@ -87,6 +122,8 @@ bun test      # テスト
 ├── agent.ts           # 会話・並行ターン・履歴・イベント配信の管理
 ├── instructions.ts    # 会話方針とチーム協調のシステムプロンプト
 ├── tool-runner.ts     # 各参加者のツール呼び出し・承認・結果イベント
+├── codemode.ts        # Code Modeのbubblewrap隔離・RPC・上限管理
+├── codemode-child.ts  # 隔離プロセス内のJavaScript実行とツールAPI
 ├── codex.ts           # OpenAI Codex Responses API とのストリーミング通信
 ├── auth.ts            # ChatGPT OAuth と認証情報の管理
 ├── approve.ts         # シェルコマンドのルール判定・Jev 連携

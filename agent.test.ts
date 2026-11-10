@@ -63,7 +63,7 @@ test("four peers start after prior ownership announcement, then overlap and pres
   };
   const { agent, id, pushes } = setup(response);
   expect(agent.send(id, "work", [])).toBe("ok");
-  expect(agent.send(id, "duplicate", [])).toBe("busy");
+  expect(agent.send(id, "duplicate", [], agent.open(id)!.messages[0]!.id)).toBe("busy");
   await until(() => !agent.open(id)!.meta.running);
   expect(started).toEqual(["shiro-1", "shiro-2", "shiro-3", "shiro-4"]);
   expect(new Set(tasks.values()).size).toBe(4);
@@ -187,17 +187,42 @@ test("restart settles every participant; board and named bubbles persist", async
   agent.remove(id);
 });
 
-test("runaway tool loops hit a bounded limit", async () => {
+test("tool loops can finish normally beyond 100 rounds without a round limit", async () => {
   let calls = 0;
   const response: typeof respond = async function* () {
     calls++;
+    if (calls <= 120) yield item("team", { action: "read", id: "", text: "" });
+  };
+  const { agent, id } = setup(response);
+  agent.send(id, "long task", []);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(calls).toBe(121); // No task was queued, so only the first peer ever runs.
+  const messages = store.get(id)!.messages.filter((m) => m.role === "assistant");
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toMatchObject({ status: "done" });
+  agent.remove(id);
+});
+
+test("tool loops beyond 100 rounds still stop on user cancellation", async () => {
+  let calls = 0;
+  const response: typeof respond = async function* (o) {
+    calls++;
+    if (calls === 121) {
+      await new Promise<void>((resolve) => o.signal.addEventListener("abort", () => resolve(), { once: true }));
+      o.signal.throwIfAborted();
+    }
     yield item("team", { action: "read", id: "", text: "" });
   };
   const { agent, id } = setup(response);
-  agent.send(id, "loop", []);
+  agent.send(id, "loop until stopped", []);
+  await until(() => calls === 121);
+  expect(agent.open(id)!.meta.running).toBe(true);
+  agent.stop(id);
   await until(() => !agent.open(id)!.meta.running);
-  expect(calls).toBe(40); // No task was queued, so only the first peer ever runs.
-  expect(store.get(id)!.messages.filter((m) => m.role === "assistant").every((m) => m.role === "assistant" && m.status === "error" && m.error?.includes("40"))).toBe(true);
+  expect(calls).toBe(121);
+  const messages = store.get(id)!.messages.filter((m) => m.role === "assistant");
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toMatchObject({ status: "stopped" });
   agent.remove(id);
 });
 
@@ -429,4 +454,128 @@ test("the report counts started peers, queued tasks and labelled notes per turn"
     g("t2", "user", "user"), g("t2", "shiro-1", "start"), g("t2", "shiro-1", "tool"),
   ]);
   expect(rows.map((t) => [t.peers.size, t.add, t.tool, t["type-gap"], t.failure])).toEqual([[2, 2, 0, 1, 1], [1, 0, 1, 0, 0]]);
+});
+
+test("follow-ups during a final response persist immediately and trigger another request with text and images", async () => {
+  const gate = Promise.withResolvers<void>();
+  let calls = 0;
+  const inputs: unknown[] = [];
+  const response: typeof respond = async function* (o) {
+    calls++;
+    inputs.push(structuredClone(o.input));
+    if (calls === 1) await gate.promise;
+  };
+  const { agent, id, pushes } = setup(response);
+  agent.send(id, "original", []);
+  const original = agent.open(id)!.messages[0]!;
+  expect(agent.send(id, "first follow-up", [])).toBe("ok");
+  expect(agent.send(id, "image follow-up", ["data:image/png;base64,aGVsbG8="])).toBe("ok");
+  expect(agent.send(id, "edit", [], original.id)).toBe("busy");
+  expect(agent.open(id)!.messages.filter((m) => m.role === "user")).toHaveLength(3);
+  expect(pushes.filter((p) => p.type === "ev" && p.ev.t === "user")).toHaveLength(3);
+  expect(store.get(id)!.items).toHaveLength(3);
+  gate.resolve();
+  await until(() => !agent.open(id)!.meta.running);
+  expect(calls).toBe(2);
+  expect(inputs[0]).toHaveLength(1);
+  expect(inputs[1]).toHaveLength(3);
+  const users = agent.open(id)!.messages.filter((m) => m.role === "user");
+  expect(inputs[1]).toMatchObject([
+    { role: "user", content: expect.stringContaining("original") },
+    { role: "user", content: `[#${users[1]!.id.replace(/-/g, "").slice(0, 8)}] first follow-up` },
+    { role: "user", content: [
+      { type: "input_text", text: expect.stringContaining("image follow-up") },
+      { type: "input_image", image_url: "data:image/png;base64,aGVsbG8=" },
+    ] },
+  ]);
+  expect(store.substrate(id).filter((g) => g.kind === "followup")).toHaveLength(2);
+  // Editing a follow-up rewinds to its saved transcript boundary, not the start of the turn.
+  expect(agent.send(id, "edited follow-up", [], users[1]!.id)).toBe("ok");
+  await until(() => !agent.open(id)!.meta.running);
+  expect(store.get(id)!.items).toHaveLength(2);
+  expect(agent.open(id)!.messages.filter((m) => m.role === "user")).toHaveLength(2);
+  agent.remove(id);
+});
+
+test("every active peer receives follow-ups once after pending tools, without sharing private histories", async () => {
+  const calls = new Map<string, number>();
+  const waiting = new Set<string>();
+  const seen = new Set<string>();
+  const gate = Promise.withResolvers<void>();
+  const response: typeof respond = async function* (o) {
+    const n = calls.get(o.session) ?? 0;
+    calls.set(o.session, n + 1);
+    if (n === 0) { yield* seed(o); yield item("team", { action: "claim", id: "", text: "" }); }
+    if (n === 1) yield item("team", { action: "publish", id: "", text: "assigned follow-up test" });
+    if (n === 2) {
+      waiting.add(o.session);
+      await gate.promise;
+      yield item("team", { action: "read", id: "", text: "" });
+    }
+    if (n === 3) {
+      const followups = o.input.filter((i) => "role" in i && i.role === "user" && typeof i.content === "string" && i.content.includes("new instructions"));
+      expect(followups).toHaveLength(1);
+      expect(o.input.filter((i) => i.type === "function_call")).toHaveLength(o.session.endsWith("shiro-1") ? 7 : 3);
+      seen.add(o.session);
+      yield item("team", { action: "read", id: "", text: "" });
+    }
+    if (n === 4) expect(o.input.filter((i) => "role" in i && i.role === "user")).toHaveLength(2);
+  };
+  const { agent, id } = setup(response);
+  agent.send(id, "start", []);
+  await until(() => waiting.size === 4);
+  expect(agent.send(id, "new instructions", [])).toBe("ok");
+  gate.resolve();
+  await until(() => !agent.open(id)!.meta.running);
+  expect(seen.size).toBe(4);
+  agent.remove(id);
+});
+
+test("follow-up while awaiting approval is accepted but a stopping turn stays busy", async () => {
+  let calls = 0;
+  const inputs: unknown[] = [];
+  const response: typeof respond = async function* (o) {
+    inputs.push(structuredClone(o.input));
+    if (++calls === 1) yield item("bash", { command: "printf follow-up-test" });
+  };
+  const { agent, id, pushes } = setup(response);
+  agent.send(id, "start", []);
+  const pending = () => pushes.flatMap((p) => p.type === "ev" && p.ev.t === "tool_status" && p.ev.status === "awaiting" ? [p.ev.id] : []);
+  await until(() => pending().length === 1);
+  expect(agent.send(id, "while waiting", [])).toBe("ok");
+  expect(agent.approve(id, pending()[0]!, false)).toBe(true);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(JSON.stringify(inputs[1])).toContain("while waiting");
+  agent.send(id, "start again", []);
+  agent.stop(id);
+  expect(agent.send(id, "too late", [])).toBe("busy");
+  await until(() => !agent.open(id)!.meta.running);
+  agent.remove(id);
+});
+
+test("a follow-up accepted while the scheduler settles still gets a responder", async () => {
+  let delivered = false;
+  let injected = false;
+  let result = "";
+  const response: typeof respond = async function* (o) {
+    if (JSON.stringify(o.input).includes("last-moment follow-up")) delivered = true;
+  };
+  const agent = createAgent({
+    cwd: dir, defaultModel: "test", response,
+    publish: (p) => {
+      if (!injected && p.type === "ev" && p.ev.t === "board" && p.ev.board.statuses?.["shiro-1"] === "finished") {
+        injected = true;
+        result = agent.send(p.conv, "last-moment follow-up", []);
+      }
+    },
+  });
+  const { id } = agent.create({});
+  agent.send(id, "original", []);
+  await until(() => !agent.open(id)!.meta.running);
+  expect(injected).toBe(true);
+  expect(result).toBe("ok");
+  expect(delivered).toBe(true);
+  expect(agent.open(id)!.messages.filter((m) => m.role === "assistant")).toHaveLength(2);
+  expect(agent.open(id)!.board.statuses?.["shiro-1"]).toBe("finished");
+  agent.remove(id);
 });

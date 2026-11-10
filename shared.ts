@@ -12,7 +12,7 @@ export const EFFORTS = [
   { id: "low", name: "速さ優先" },
   { id: "medium", name: "標準" },
   { id: "high", name: "じっくり" },
-  { id: "xhigh", name: "最大" },
+  { id: "max", name: "最大" },
 ] as const;
 export type Effort = (typeof EFFORTS)[number]["id"];
 export const isEffort = (v: unknown): v is Effort => EFFORTS.some((e) => e.id === v);

@@ -2,6 +2,7 @@
 import type { ResponseFunctionToolCall, ResponseInputItem } from "openai/resources/responses/responses";
 import * as store from "./store";
 import { createBoard } from "./team";
+import { createPeerScheduler } from "./peer-scheduler";
 import { respond } from "./codex";
 import { available, describe, parseArgs, summarize } from "./tools";
 import { firstLine } from "./toolkit";
@@ -9,7 +10,7 @@ import { instructions, teamInstructions } from "./instructions";
 import { createToolRunner } from "./tool-runner";
 import { apply, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type Settings, type ToolPart } from "./shared";
 
-type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void>; deleted?: boolean };
+type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void>; deleted?: boolean; followup?: (text: string, images: string[]) => void };
 
 /** The id the model sees for a user message: short enough to quote back to the react tool. */
 const shortId = (id: string) => id.replace(/-/g, "").slice(0, 8);
@@ -61,6 +62,9 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
     turns.set(c.meta.id, turn);
     // Stopping while a call waits for approval counts as a denial; the next request then sees the abort.
     signal.addEventListener("abort", () => turn.approvals.forEach((resolve) => resolve(false)));
+    const followups: ResponseInputItem[] = [];
+    const requests = [text];
+    let observed = 0;
     const itemIndex = c.items.length;
     if (!c.messages.length && !rewound) c.meta.title = text.replace(/\s+/g, " ").trim().slice(0, 40) || "画像";
     const userId = crypto.randomUUID();
@@ -75,25 +79,29 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
         ? { role: "user", content: [{ type: "input_text", text: userText }, ...images.map((image_url) => ({ type: "input_image" as const, image_url, detail: "auto" as const }))] }
         : { role: "user", content: userText },
     );
-    const peers = ["shiro-1", "shiro-2", "shiro-3", "shiro-4"];
-    const statuses: Record<string, string> = Object.fromEntries(peers.map((agent) => [agent, "waiting"]));
-    // Only startup is ordered. A peer's claimed-and-published assignment opens the next gate, and the next peer
-    // then starts only while an unclaimed task exists: headcount follows the work, not the roster.
-    const ready = peers.map(() => Promise.withResolvers<void>());
-    let wake = Promise.withResolvers<void>();
-    const poke = () => { wake.resolve(); wake = Promise.withResolvers<void>(); };
-    let active = 0;
-    const unblock = () => { ready.forEach((gate) => gate.resolve()); poke(); };
-    signal.addEventListener("abort", unblock, { once: true });
-    const board = createBoard(undefined, () => {
-      if (!turn.deleted) { store.save(c); broadcastBoard(); }
-      poke();
-    });
-    // A task its owner left unfinished stays claimable by running peers but does not start a fresh one:
-    // otherwise each peer that forgets to complete its task would hand the same work to the next.
-    const abandoned = new Set<string>();
-    const free = () => board.state.tasks.some((t) => !t.done && !t.owner && !abandoned.has(t.id));
+    turn.followup = (text, images) => {
+      const id = crypto.randomUUID();
+      const itemIndex = c.items.length;
+      const userText = [...(notes.get(c.meta.id) ?? []), `[#${shortId(id)}] ${text}`].join("\n");
+      notes.delete(c.meta.id);
+      const item: ResponseInputItem = images.length
+        ? { role: "user", content: [{ type: "input_text", text: userText }, ...images.map((image_url) => ({ type: "input_image" as const, image_url, detail: "auto" as const }))] }
+        : { role: "user", content: userText };
+      log("user", "followup", { id, text, images: images.length });
+      requests.push(text);
+      followups.push(item);
+      c.items.push(item);
+      emit(c, { t: "user", msg: { id, role: "user", text, images, itemIndex } });
+      touch(c);
+    };
     const broadcastBoard = () => emit(c, { t: "board", board: structuredClone(board.state) });
+    const boardChanged = () => { if (!turn.deleted) { store.save(c); broadcastBoard(); } };
+    const board = createBoard(undefined, () => {
+      boardChanged();
+      scheduler.notify();
+    });
+    const scheduler = createPeerScheduler({ signal, tasks: () => board.state.tasks, changed: boardChanged });
+    const { statuses } = scheduler;
     board.state.statuses = statuses;
     c.board = board.state;
     broadcastBoard();
@@ -109,23 +117,24 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
       try { signal.throwIfAborted(); return await f(); } finally { release(); }
     }
 
-    async function worker(agent: string, started: () => void) {
-      statuses[agent] = "running";
-      active++;
+    async function worker(agent: string, acted: (action: string) => void) {
       log(agent, "start", {});
-      if (!turn.deleted) { store.save(c); broadcastBoard(); }
       const message = crypto.randomUUID();
       const history = structuredClone(base);
+      let received = 0;
+      const receive = () => {
+        history.push(...structuredClone(followups.slice(received)));
+        received = followups.length;
+        observed = Math.max(observed, received);
+      };
       const workerEmit = (ev: Ev) => { if (!turn.deleted) emit(c, { ...ev, message }); };
       workerEmit({ t: "assistant", id: message, model: c.meta.model, agent });
       const rawTeam = board.forAgent(agent);
-      let claimed = false;
       const team = { act(action: string, id: string, text: string) {
         signal.throwIfAborted();
         const result = rawTeam.act(action, id, text);
         if (action !== "read") log(agent, action, { id, text, result: action === "publish" ? undefined : result });
-        if (action === "claim") claimed = true;
-        if (action === "publish" && claimed && board.state.tasks.some((t) => t.owner === agent && !t.done)) started();
+        acted(action);
         return result;
       } };
 
@@ -149,13 +158,14 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
 
       const call = createToolRunner({
         message, signal, emit: workerEmit, chat, team, settings: () => c.meta,
-        approvals: turn.approvals, cwd, task: text, exclusive,
+        approvals: turn.approvals, cwd, task: () => requests.join("\n\nFollow-up from user:\n"), exclusive,
+        onCall: (data) => log(agent, "tool", data),
       });
 
       try {
-        for (let round = 0; ; round++) {
+        while (true) {
           signal.throwIfAborted();
-          if (round >= 40) throw new Error("チームの実行上限（40ラウンド）に達しました");
+          receive();
           const calls: ResponseFunctionToolCall[] = [];
           const events = response({
             model: c.meta.model, effort: c.meta.effort, instructions: instructions(cwd) + teamInstructions(agent, board.snapshot(), statuses), input: history,
@@ -171,7 +181,10 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
               if (ev.item.type === "function_call") calls.push(ev.item as ResponseFunctionToolCall);
             }
           }
-          if (!calls.length) break;
+          if (!calls.length) {
+            if (received < followups.length) continue;
+            break;
+          }
           for (const fc of calls) {
             const output = await call(fc);
             // The team tool is logged per action above; the rest is the episode trace that replay needs.
@@ -184,33 +197,20 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
       } catch (e) {
         statuses[agent] = signal.aborted ? "stopped" : "error";
         workerEmit(signal.aborted ? { t: "end", status: "stopped" } : { t: "end", status: "error", error: (e as Error).message });
-      } finally {
-        // A silent finish or failure must not strand later peers behind an unopened gate.
-        started();
-        if (statuses[agent] === "running") statuses[agent] = "finished";
-        for (const task of board.state.tasks) if (task.owner === agent && !task.done) { delete task.owner; abandoned.add(task.id); }
-        if (!turn.deleted) { store.save(c); broadcastBoard(); }
-        active--;
-        poke();
       }
     }
     try {
-      await Promise.allSettled(peers.map(async (agent, index) => {
-        if (index > 0) {
-          await ready[index - 1]!.promise;
-          while (!signal.aborted && !free() && active > 0) await wake.promise;
-        }
-        if (signal.aborted || (index > 0 && !free())) {
-          statuses[agent] = signal.aborted ? "stopped" : "idle";
-          ready[index]!.resolve();
-          if (!turn.deleted) { store.save(c); broadcastBoard(); }
-          return;
-        }
-        try { await worker(agent, () => ready[index]!.resolve()); }
-        finally { ready[index]!.resolve(); }
-      }));
+      await scheduler.run(worker);
+      // A message may arrive after the last worker ends but before the scheduler settles.
+      // Reuse the board and run one responder rather than losing that accepted message.
+      while (!signal.aborted && observed < followups.length) {
+        statuses["shiro-1"] = "running";
+        boardChanged();
+        await worker("shiro-1", () => {});
+        if (statuses["shiro-1"] === "running") statuses["shiro-1"] = "finished";
+        boardChanged();
+      }
     } finally {
-      signal.removeEventListener("abort", unblock);
       turns.delete(c.meta.id);
       if (!turn.deleted) {
         const findings = board.state.notes.filter((n) => !n.text.startsWith("Chat: "));
@@ -256,7 +256,12 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
     send(id: string, text: string, images: string[], from?: string): "ok" | "missing" | "busy" {
       const c = load(id);
       if (!c) return "missing";
-      if (turns.has(id)) return "busy";
+      const active = turns.get(id);
+      if (active) {
+        if (from !== undefined || active.ctl.signal.aborted || !active.followup) return "busy";
+        active.followup(text, images);
+        return "ok";
+      }
       if (from !== undefined) {
         const at = c.messages.findIndex((m) => m.id === from && m.role === "user");
         const m = c.messages[at];
