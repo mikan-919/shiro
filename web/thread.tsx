@@ -113,8 +113,8 @@ function AssistantRows({ m, fresh, isLast, busy, onApprove, onReact, onRegenerat
 }) {
   const live = m.status === "streaming";
   const tail = m.parts.at(-1);
-  const typing =
-    live && (!tail || tail.type === "say" || tail.type === "text" || (tail.type === "reasoning" && tail.done) || (tail.type === "tool" && tail.status !== "running" && tail.status !== "awaiting"));
+  // Steps are hidden for now, so the dots stand for all work in progress; only a pending approval shows its own card.
+  const typing = live && !(tail?.type === "tool" && tail.status === "awaiting");
   return (
     <div className={`msg ${fresh ? "is-new" : ""}`}>
       {blocks(m).map((b) =>
