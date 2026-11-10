@@ -98,6 +98,8 @@ export const Composer = forwardRef<ComposerHandle, {
   onSend: (text: string, images: string[]) => Promise<boolean>; onStop: () => void; placeholder: string;
 }>(function Composer({ value, onChange, running, disabled, onSend, onStop, placeholder }, handle) {
   const [images, setImages] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+  const submitting = useRef(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -114,13 +116,21 @@ export const Composer = forwardRef<ComposerHandle, {
     el.style.height = `${el.scrollHeight}px`;
   }, [value]);
 
-  const canSend = !disabled && !running && (value.trim() !== "" || images.length > 0);
+  const canSend = !disabled && !sending && (value.trim() !== "" || images.length > 0);
   const submit = async () => {
-    if (!canSend) return;
-    const [t, im] = [value, images];
-    onChange("");
-    setImages([]);
-    if (!(await onSend(t, im))) (onChange(t), setImages(im));
+    if (!canSend || submitting.current) return;
+    submitting.current = true;
+    setSending(true);
+    try {
+      if (await onSend(value, images)) {
+        onChange("");
+        setImages([]);
+      }
+    } finally {
+      submitting.current = false;
+      setSending(false);
+      ta.current?.focus();
+    }
   };
 
   return (
@@ -134,7 +144,7 @@ export const Composer = forwardRef<ComposerHandle, {
           {images.map((src, i) => (
             <div className="attach" key={i}>
               <img src={src} alt="" />
-              <button type="button" aria-label="画像を外す" onClick={() => setImages(images.filter((_, j) => j !== i))}>
+              <button type="button" aria-label="画像を外す" disabled={sending} onClick={() => setImages(images.filter((_, j) => j !== i))}>
                 <Icon name="x" size={12} />
               </button>
             </div>
@@ -142,34 +152,37 @@ export const Composer = forwardRef<ComposerHandle, {
         </div>
       )}
       <div className="composer-row">
-        <IconButton icon="plus" label="画像を添付" disabled={disabled} onClick={() => fileInput.current?.click()} />
+        <IconButton icon="plus" label="画像を添付" disabled={disabled || sending} onClick={() => fileInput.current?.click()} />
         <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => (addFiles(imageFiles(e.target.files)), (e.target.value = ""))} />
         <textarea
           ref={ta}
           rows={1}
           value={value}
           placeholder={placeholder}
+          readOnly={sending}
           disabled={disabled}
           aria-label="メッセージ"
           onChange={(e) => onChange(e.target.value)}
           onPaste={(e) => {
             const files = imageFiles(e.clipboardData.files);
-            if (files.length) (e.preventDefault(), addFiles(files));
+            if (files.length) {
+              e.preventDefault();
+              if (!sending) addFiles(files);
+            }
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) (e.preventDefault(), submit());
             if (e.key === "Escape" && running) onStop();
           }}
         />
-        {running ? (
+        {running && (
           <button type="button" key="stop" className="send stop" onClick={onStop} aria-label="生成を停止" title="生成を停止（Esc）">
             <Icon name="stop" />
           </button>
-        ) : (
-          <button type="submit" key="send" className="send" disabled={!canSend} aria-label="送信" title="送信（Enter）">
-            <Icon name="up" />
-          </button>
         )}
+        <button type="submit" key="send" className="send" disabled={!canSend} aria-label="送信" title="送信（Enter）">
+          <Icon name="up" />
+        </button>
       </div>
     </form>
   );

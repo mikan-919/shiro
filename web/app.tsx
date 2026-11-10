@@ -91,7 +91,7 @@ function App() {
       disabled={!authed}
       onSend={(t, im) => send(t, im)}
       onStop={live.stop}
-      placeholder={running ? "応答の生成中です" : "shiro にメッセージを送る"}
+      placeholder={running ? "実行中でもメッセージを送れます" : "shiro にメッセージを送る"}
     />
   );
 
