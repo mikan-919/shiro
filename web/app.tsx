@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { DEFAULTS, type UserMessage } from "../shared";
 import { useLive, useStored, type Settings } from "./sync";
 import { Icon, IconButton } from "./ui";
+import { LoaderCircle } from "lucide-react";
 import { useLinger } from "./motion";
 import { Composer, SettingsPicker, imageFiles, type ComposerHandle } from "./composer";
 import { ContextPage } from "./context";
@@ -131,9 +132,7 @@ function App() {
           <IconButton icon="menu" label={sidebar ? "会話の一覧を閉じる" : "会話の一覧を開く"} onClick={() => setSidebar(!sidebar)} />
           <h1 className="who">
             <span className="who-avatar" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="26" height="26">
-                <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeDasharray="2.6 2.2" />
-              </svg>
+              <Icon name="ring" size={26} />
             </span>
             <span className="who-name">shiro</span>
             {showThread && <span className="who-title" key={conv.meta.id}>{conv.meta.title}</span>}
@@ -162,7 +161,7 @@ function App() {
             />
           </>
         ) : live.currentId && !conv ? (
-          <div className="center"><span className="spin large" aria-label="読み込み中" /></div>
+          <div className="center"><LoaderCircle className="spin large" strokeWidth={1.7} role="img" aria-label="読み込み中" /></div>
         ) : (
           <Empty
             needsLogin={!!srv && !authed}

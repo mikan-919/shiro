@@ -2,6 +2,7 @@
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import type { Judge, ReasoningPart, ToolPart, ToolView } from "../shared";
 import { Collapse, Icon } from "./ui";
+import { LoaderCircle } from "lucide-react";
 import { useFollowBottom } from "./motion";
 import { Md } from "./markdown";
 import "./steps.css";
@@ -42,8 +43,8 @@ function Detail({ d }: { d: NonNullable<ToolView["detail"]> }) {
 }
 
 const STATUS: Record<ToolPart["status"], ReactNode> = {
-  judging: <span className="badge judging"><span className="spin" />自動判定中</span>,
-  running: <span className="spin" aria-label="実行中" />,
+  judging: <span className="badge judging"><LoaderCircle className="spin" strokeWidth={1.7} aria-hidden="true" />自動判定中</span>,
+  running: <LoaderCircle className="spin" strokeWidth={1.7} role="img" aria-label="実行中" />,
   awaiting: <span className="badge wait">承認待ち</span>,
   done: <span className="ok"><Icon name="check" size={14} /></span>,
   denied: <span className="badge muted">拒否しました</span>,

@@ -149,9 +149,7 @@ export function Sidebar({ convs, currentId, srv, query, setQuery, searchRef, onN
     <aside className="sidebar" aria-label="会話の一覧">
       <div className="side-top">
         <a className="wordmark" href="/" onClick={(e) => (e.preventDefault(), onNew())} aria-label="shiro 新しい会話">
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeDasharray="2.6 2.2" />
-          </svg>
+          <Icon name="ring" size={22} />
           <span>shiro</span>
         </a>
         <IconButton icon="panel" label="サイドバーを閉じる" onClick={onClose} />
