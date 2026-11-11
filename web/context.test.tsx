@@ -60,3 +60,17 @@ test("four participants show distinct identities and startup waiting status", ()
   expect(html).toContain("peer-four");
   expect(html).toContain("integration notes");
 });
+
+test("the colony section shows proposals with their replay and cost, adopted types, reports and settled facts", async () => {
+  const { ColonyView } = await import("./colony");
+  const board: Board = { tasks: [], notes: [], gists: [{ agent: "shiro-2", type: "handoff", fields: { work: "run the suite" } }] };
+  expect(renderToStaticMarkup(<ContextPage board={board} running title="t" />)).toContain("run the suite");
+  const html = renderToStaticMarkup(<ColonyView decide={() => {}} data={{
+    version: 3, threshold: 10, pending: 4, runs: [{ seq: 30, at: 0, reports: 12, proposals: 1 }],
+    proposals: [{ seq: 29, at: 0, name: "handoff", purpose: "Remaining work offered to peers.", fields: { work: "what remains" }, obligation: "Claim it or leave it.", covers: [7], cost: { fields: 1, bytes: 120 } }],
+    types: [],
+    reports: [{ seq: 7, at: 0, conv: "abcdefgh1234", source: "observer", wanted: "hand the suite to a peer", distortion: "note text", cost: "unmeasured", evidence: ["#3"] }],
+    settled: [{ seq: 5, at: 0, kind: "environment", text: "python3 is not installed", cwd: null, retracted: true }],
+  }} />);
+  for (const s of ["4 / 10", "#29 handoff", "対応する report 1 件", "欄 1・120 バイト", "#7 hand the suite to a peer", "観察者", "未計測", "打ち消し済み", "採用か却下を決める"]) expect(html).toContain(s);
+});

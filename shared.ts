@@ -179,3 +179,13 @@ export function apply(msgs: Message[], ev: Ev): Message[] {
 
 /** What the agent said to the user in a message: its bubbles. Text written outside send_message is never shown. */
 export const assistantText = (m: AssistantMessage) => m.parts.flatMap((p) => (p.type === "say" ? [p.text] : [])).join("\n\n");
+
+/** The colony-wide part of the substrate the shared-context page shows: it spans every conversation. */
+export type Colony = {
+  version: number; threshold: number; pending: number;
+  types: { seq: number; at: number; name: string; purpose: string; fields: Record<string, string>; obligation: string }[];
+  proposals: { seq: number; at: number; name: string; purpose: string; fields: Record<string, string>; obligation: string; covers: number[]; cost: { fields: number; bytes: number } }[];
+  reports: { seq: number; at: number; conv: string; source: string; wanted: string; distortion: string; cost: string; evidence: string[] }[];
+  settled: { seq: number; at: number; kind: string; text: string; cwd: string | null; retracted: boolean }[];
+  runs: { seq: number; at: number; reports: number; proposals: number; error?: string }[];
+};

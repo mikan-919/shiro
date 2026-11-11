@@ -5,6 +5,7 @@
 import * as store from "./store";
 import { schemaText } from "./observer";
 import type { respond } from "./codex";
+import type { Colony } from "./shared";
 
 export const COLONY = "colony";
 const EVOLVER = "evolver";
@@ -93,6 +94,23 @@ export function open() {
 export function decide(action: "adopt" | "reject", target: number) {
   if (!open().some((r) => r.seq === target)) throw new Error(`#${target} is not an open proposal`);
   return store.append({ conv: COLONY, turn: COLONY, agent: "user", kind: action, body: { target } });
+}
+
+/** Everything the shared-context page shows about the schema's evolution, newest first. */
+export function colony(): Colony {
+  const log = store.substrate();
+  const retracted = new Set(log.filter((r) => r.kind === "retract").map((r) => (r.body as { target: number }).target));
+  return {
+    version: store.SUBSTRATE_VERSION, threshold: THRESHOLD, pending: pending().length,
+    types: store.types().map((r) => ({ seq: r.seq, at: r.at, ...r.body })),
+    proposals: open().map((r) => ({ seq: r.seq, at: r.at, ...r.body })).reverse(),
+    reports: log.filter((r) => r.kind === "type-gap").map((r) => ({ seq: r.seq, at: r.at, conv: r.conv, ...(r.body as Omit<Colony["reports"][number], "seq" | "at" | "conv">) })).reverse(),
+    settled: log.filter((r) => r.kind === "settled").map((r) => ({ seq: r.seq, at: r.at, ...(r.body as { kind: string; text: string; cwd: string | null }), retracted: retracted.has(r.seq) })).reverse(),
+    runs: log.filter((r) => r.kind === "evolve").map((r) => {
+      const b = r.body as { reports: number[]; proposals?: number[]; error?: string };
+      return { seq: r.seq, at: r.at, reports: b.reports.length, proposals: b.proposals?.length ?? 0, ...(b.error && { error: b.error }) };
+    }).reverse(),
+  };
 }
 
 if (import.meta.main) {

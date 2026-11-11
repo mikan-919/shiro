@@ -2,6 +2,7 @@
 import page from "./web/index.html";
 import { account, login, logout } from "./auth";
 import { createAgent } from "./agent";
+import { colony, decide } from "./evolver";
 import { jevEnabled } from "./approve";
 import { isEffort, MODELS, type Push } from "./shared";
 
@@ -62,6 +63,21 @@ const server = Bun.serve({
         await logout();
         publish({ type: "auth", account: null });
         return Response.json({ ok: true });
+      }),
+    },
+    "/api/colony": {
+      GET: guard(() => Response.json(colony())),
+    },
+    "/api/colony/decide": {
+      POST: guard(async (req) => {
+        const b = await body(req);
+        if ((b.action !== "adopt" && b.action !== "reject") || typeof b.target !== "number") return Response.json({ error: "不正な要求です" }, { status: 400 });
+        try {
+          decide(b.action, b.target);
+        } catch (e) {
+          return Response.json({ error: (e as Error).message }, { status: 409 });
+        }
+        return Response.json(colony());
       }),
     },
     "/api/conversations": {

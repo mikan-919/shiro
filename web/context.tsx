@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Board } from "../shared";
 import { CopyButton } from "./ui";
+import { ColonySection } from "./colony";
 import "./context.css";
 
 const FILTERS = [
@@ -24,6 +25,7 @@ export function ContextPage({ board, running, title }: { board?: Board; running:
   const [filter, setFilter] = useState<Kind>("all");
   const [query, setQuery] = useState("");
   const tasks = board?.tasks ?? [];
+  const gists = board?.gists ?? [];
   const notes = board?.notes ?? [];
   const q = query.trim().toLowerCase();
   const shownNotes = notes.map((n, i) => ({ ...n, i, kind: noteKind(n.text) })).filter((n) =>
@@ -62,12 +64,21 @@ export function ContextPage({ board, running, title }: { board?: Board; running:
             </li>
           ))}</ul> : <p className="context-empty">{q ? "検索に一致するタスクはありません。" : "まだ共有タスクはありません。"}</p>}
         </section>
+        {gists.length > 0 && <section aria-labelledby="context-gists">
+          <div className="context-section-head"><h2 id="context-gists">型付き gist</h2><span>{gists.length} 件・新しい順</span></div>
+          <ol className="context-notes">{gists.map((g, i) => ({ ...g, i })).filter((g) => `${g.agent} ${g.type} ${JSON.stringify(g.fields)}`.toLowerCase().includes(q)).reverse().map((g) => (
+            <li className="context-card kind-gist" key={g.i}>
+              <div className="context-card-head"><span className={`sender ${g.agent === "shiro-2" ? "peer-two" : g.agent === "shiro-3" ? "peer-three" : g.agent === "shiro-4" ? "peer-four" : ""}`}>{g.agent}</span><span className="context-tag">{g.type}</span></div>
+              <dl className="context-fields">{Object.entries(g.fields).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
+            </li>
+          ))}</ol>
+        </section>}
         <section aria-labelledby="context-notes">
           <div className="context-section-head"><h2 id="context-notes">共有ノート</h2><span>{notes.length} 件・新しい順</span></div>
           <div className="context-filters" aria-label="ノートの種類">
             {FILTERS.map((f) => <button type="button" key={f.id} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}<span>{f.id === "all" ? notes.length : notes.filter((n) => noteKind(n.text) === f.id).length}</span></button>)}
           </div>
-          {(filter === "failure" || filter === "type-gap") && <p className="context-description">{filter === "failure" ? "[failure] として公開されたノートです。すべてのツールエラーが自動で記録されるわけではありません。" : "[type-gap] は表現の不足を報告する暫定ラベルで、採用済みのスキーマ型ではありません。"}</p>}
+          {(filter === "failure" || filter === "type-gap") && <p className="context-description">{filter === "failure" ? "[failure] として公開されたノートです。すべてのツールエラーが自動で記録されるわけではありません。" : "[type-gap] は v0 の書き方です。v1 以降の type-gap report は下の「スキーマの進化」に表示します。"}</p>}
           {shownNotes.length ? <ol className="context-notes">{shownNotes.map((note) => (
             <li className={`context-card kind-${note.kind}`} key={`${note.i}:${note.agent}`}>
               <div className="context-card-head"><span className={`sender ${note.agent === "shiro-2" ? "peer-two" : note.agent === "shiro-3" ? "peer-three" : note.agent === "shiro-4" ? "peer-four" : ""}`}>{note.agent}</span><span className="context-tag">{FILTERS.find((f) => f.id === note.kind)?.label}</span></div>
@@ -75,6 +86,7 @@ export function ContextPage({ board, running, title }: { board?: Board; running:
             </li>
           ))}</ol> : <p className="context-empty">{notes.length ? "条件に一致するノートはありません。" : "まだ共有ノートはありません。公開されるとここに表示されます。"}</p>}
         </section>
+        <ColonySection running={running} />
       </div>
     </div>
   );

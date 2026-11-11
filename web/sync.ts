@@ -7,7 +7,7 @@ export type { Settings };
 export type ServerState = { account: Account | null; cwd: string; defaultModel: string; jev: boolean };
 export type Conversation = { meta: ConvView; messages: Message[]; board?: Board };
 
-async function api<T = unknown>(path: string, body?: unknown, method?: string): Promise<T> {
+export async function api<T = unknown>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await fetch(path, {
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers: body === undefined ? undefined : { "content-type": "application/json" },

@@ -33,3 +33,26 @@
 .kind-failure { border-left: 3px solid var(--rust); }
 .kind-type-gap { border-left: 3px solid var(--ochre); }
 @media (max-width: 600px) { .context-column { padding: 18px 14px 32px; gap: 18px; } .context-heading { align-items: flex-start; } .context-heading-actions { flex-direction: column-reverse; align-items: flex-end; } }
+.kind-gist { border-left: 3px solid var(--pine); }
+.kind-proposal { border-left: 3px solid var(--accent-bg); }
+.context-fields { margin: 12px 0 0; display: grid; gap: 8px; font-size: 14px; line-height: 1.7; }
+.context-fields > div { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 12px; }
+.context-fields dt { color: var(--muted); font-size: 12px; padding-top: 2px; overflow-wrap: anywhere; }
+.context-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.context-colony { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 22px; }
+.context-colony .context-section-head { margin-bottom: 0; }
+.context-colony-title { margin: 0; font-size: 18px; font-weight: 700; }
+.context-subhead { margin: 10px 0 0; font-size: 15px; font-weight: 700; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.context-subhead span { color: var(--muted); font-size: 12px; font-weight: 400; }
+.context-card .context-obligation { color: var(--muted); font-size: 13px; }
+.context-metrics { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+.context-covers, .context-fold { margin-top: 10px; font-size: 13px; }
+.context-covers summary, .context-fold > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.context-fold > .context-notes { margin-top: 10px; }
+.context-covers ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.7; overflow-wrap: anywhere; }
+.context-decide { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+.context-decide button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text); }
+.context-decide button.primary { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; }
+.context-card.retracted { opacity: .55; }
+.context-card.retracted p { text-decoration: line-through; }
+@media (max-width: 600px) { .context-fields > div { grid-template-columns: 1fr; gap: 2px; } }
