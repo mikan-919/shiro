@@ -35,6 +35,10 @@ export function createBoard(seed?: Board, changed: () => void = () => {}) {
           if (!text.trim()) throw new Error("note is empty");
           state.notes.push({ agent, text: text.slice(0, 4000) });
           if (state.notes.length > 40) state.notes.shift();
+        } else if (action === "gist") {
+          // write_gist validated the type and fields; id is the type name, text the fields as JSON.
+          (state.gists ??= []).push({ agent, type: id, fields: JSON.parse(text) });
+          if (state.gists.length > 40) state.gists.shift();
         } else throw new Error("unknown team action");
         changed();
         return snapshot();
@@ -68,6 +72,27 @@ export const gapTool: Tool = {
     if (!str(a.wanted).trim() || !str(a.distortion).trim()) throw new Error("wanted and distortion are required");
     const seq = ctx.substrate.append("type-gap", { wanted: str(a.wanted).slice(0, 600), distortion: str(a.distortion).slice(0, 600), cost: str(a.cost).slice(0, 600) || "unmeasured", evidence: [str(a.evidence).slice(0, 300)], source: "self" });
     return `recorded type-gap #${seq}`;
+  },
+};
+
+/** v3: writes a gist of a type the user adopted from the evolver's proposals. Its fields are the type's own. */
+export const writeGistTool: Tool = {
+  def: def("write_gist", "Write a gist of one of the adopted gist types listed in your instructions, instead of bending that state into a note or task text. Peers see it on the board.", {
+    type: "The adopted type's name", fields: "A JSON object whose keys are that type's fields and whose values are strings",
+  }),
+  view: view("gist", "type"),
+  run: async (a, ctx) => {
+    if (!ctx.team || !ctx.substrate) throw new Error("no active team");
+    const type = ctx.substrate.types().find((t) => t.body.name === a.type);
+    if (!type) throw new Error("no adopted gist type with this name");
+    let fields: unknown;
+    try { fields = JSON.parse(str(a.fields)); } catch { throw new Error("fields is not JSON"); }
+    if (!fields || typeof fields !== "object" || Array.isArray(fields)) throw new Error("fields must be a JSON object");
+    const entries = Object.entries(fields).filter(([, v]) => String(v ?? "").trim());
+    const unknown = entries.filter(([k]) => !Object.hasOwn(type.body.fields, k)).map(([k]) => k);
+    if (unknown.length) throw new Error(`${type.body.name} has no field ${unknown.join(", ")}; its fields are ${Object.keys(type.body.fields).join(", ")}`);
+    if (!entries.length) throw new Error("no field is filled");
+    return ctx.team.act("gist", type.body.name, JSON.stringify(Object.fromEntries(entries.map(([k, v]) => [k, String(v).slice(0, 1000)]))));
   },
 };
 

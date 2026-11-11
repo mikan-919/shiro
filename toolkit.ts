@@ -6,7 +6,7 @@ export type Args = Record<string, unknown>;
 export type ToolContext = {
   team?: { act(action: string, id: string, text: string, files?: string): string };
   /** Typed gists beyond notes and tasks. `append` returns the new gist's number; `settled` is the long-term shared context. */
-  substrate?: { append(kind: string, body: unknown): number; settled(): { seq: number }[]; cwd: string };
+  substrate?: { append(kind: string, body: unknown): number; settled(): { seq: number }[]; types(): { body: import("./store").GistType }[]; cwd: string };
   signal: AbortSignal;
   /** Dispatch through the runner, never directly through a tool's run method. */
   callTool?: (name: string, args: Args, signal?: AbortSignal) => Promise<string>;

@@ -9,6 +9,7 @@ import { firstLine } from "./toolkit";
 import { instructions, teamInstructions } from "./instructions";
 import { createToolRunner } from "./tool-runner";
 import { observeTurn } from "./observer";
+import { evolve } from "./evolver";
 import { apply, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type Settings, type ToolPart } from "./shared";
 
 type Turn = { ctl: AbortController; approvals: Map<string, (ok: boolean) => void>; deleted?: boolean; followup?: (text: string, images: string[]) => void };
@@ -134,7 +135,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
       const team = { act(action: string, id: string, text: string, files = "") {
         signal.throwIfAborted();
         const result = rawTeam.act(action, id, text, files);
-        if (action !== "read") log(agent, action, { id, text, files: files || undefined, result: action === "publish" ? undefined : result });
+        if (action !== "read") log(agent, action, { id, text, files: files || undefined, result: action === "publish" || action === "gist" ? undefined : result });
         acted(action);
         return result;
       } };
@@ -159,7 +160,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
 
       const call = createToolRunner({
         message, signal, emit: workerEmit, chat, team, settings: () => c.meta,
-        substrate: { append: (kind, body) => log(agent, kind, body), settled: () => store.settled(cwd), cwd },
+        substrate: { append: (kind, body) => log(agent, kind, body), settled: () => store.settled(cwd), types: store.types, cwd },
         approvals: turn.approvals, cwd, task: () => requests.join("\n\nFollow-up from user:\n"), exclusive,
         onCall: (data) => log(agent, "tool", data),
       });
@@ -170,7 +171,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
           receive();
           const calls: ResponseFunctionToolCall[] = [];
           const events = response({
-            model: c.meta.model, effort: c.meta.effort, instructions: instructions(cwd) + teamInstructions(agent, board.snapshot(), statuses, store.settled(cwd)), input: history,
+            model: c.meta.model, effort: c.meta.effort, instructions: instructions(cwd) + teamInstructions(agent, board.snapshot(), statuses, store.settled(cwd), store.types()), input: history,
             tools: available().map((t) => t.def), session: `${c.meta.id}:${agent}`, signal,
           });
           for await (const ev of events) {
@@ -219,7 +220,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
         if (findings.length) c.items.push({ role: "assistant", content: `Team findings (reported by peers; verify before reuse): ${JSON.stringify(findings)}` });
         touch(c);
         // The turn is over for the user; the observer reads its episode afterwards, off the turn's clock.
-        void observeTurn(c.meta.id, userId, c.meta.model, response);
+        void observeTurn(c.meta.id, userId, c.meta.model, response).then(() => evolve(c.meta.model, response));
       }
     }
   }

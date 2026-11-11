@@ -663,3 +663,41 @@ test("settled facts reach later conversations in the same directory until a peer
   expect(store.settled(dir)).toEqual([]);
   expect(store.substrate().filter((r) => r.kind === "settled" && r.seq === Number(seq))).toHaveLength(1); // Retracted, not deleted.
 });
+
+test("the evolver proposes types after enough reports, replays them, and only an adopted type can be written", async () => {
+  const evolver = await import("./evolver");
+  const { writeGistTool } = await import("./team");
+  const { createBoard } = await import("./team");
+  const gap = () => store.append({ conv: "c", turn: "t", agent: "observer", kind: "type-gap", body: { wanted: "handoff to a named peer", distortion: "note text", cost: "unmeasured", evidence: ["#1"], source: "observer" } });
+  let calls = 0;
+  const model: typeof respond = async function* (o) {
+    calls++;
+    const nums = [...(o.input[0] as { content: string }).content.matchAll(/report #(\d+)/g)].map((m) => Number(m[1]));
+    yield { type: "text", text: o.instructions.startsWith("You design") ? JSON.stringify({ existing: [nums[0]], proposals: [
+      { name: "handoff", purpose: "Remaining work offered to peers.", fields: { work: "what remains", why: "why it is handed off" }, obligation: "Claim it or leave it." },
+      { name: "Bad Name", purpose: "x", fields: { a: "b" }, obligation: "x" },
+    ] }) : JSON.stringify({ covers: [[...nums.slice(1), 999999]] }) };
+  };
+  while (evolver.pending().length < evolver.THRESHOLD - 1) gap();
+  expect(await evolver.evolve("m", model)).toBe(0);
+  expect(calls).toBe(0); // Below the threshold: no model call.
+  gap();
+  const reports = evolver.pending().map((r) => r.seq);
+  expect(await evolver.evolve("m", model)).toBe(1);
+  expect(calls).toBe(2);
+  expect(evolver.pending()).toHaveLength(0);
+  const [proposal] = evolver.open();
+  expect(proposal!.body).toMatchObject({ name: "handoff", covers: reports.slice(1), cost: { fields: 2 } });
+  expect(store.types()).toHaveLength(0);
+  const team = createBoard().forAgent("shiro-1");
+  const ctx = { team, substrate: { append: () => 0, settled: () => [], types: store.types, cwd: "/" } } as unknown as Parameters<typeof writeGistTool.run>[1];
+  await expect(writeGistTool.run({ type: "handoff", fields: "{\"work\":\"tests\"}" }, ctx)).rejects.toThrow("no adopted");
+  evolver.decide("adopt", proposal!.seq);
+  expect(() => evolver.decide("reject", proposal!.seq)).toThrow("not an open proposal");
+  expect(store.types().map((t) => t.body.name)).toEqual(["handoff"]);
+  await expect(writeGistTool.run({ type: "handoff", fields: "{\"owner\":\"shiro-2\"}" }, ctx)).rejects.toThrow("no field owner");
+  const board = JSON.parse(await writeGistTool.run({ type: "handoff", fields: "{\"work\":\"tests\"}" }, ctx) as string);
+  expect(board.gists).toEqual([{ agent: "shiro-1", type: "handoff", fields: { work: "tests" } }]);
+  const { teamInstructions } = await import("./instructions");
+  expect(teamInstructions("shiro-1", "{}", {}, [], store.types())).toContain("- handoff {work: what remains; why: why it is handed off}");
+});

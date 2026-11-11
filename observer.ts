@@ -6,11 +6,14 @@ import type { respond } from "./codex";
 const OBSERVER = "observer";
 const cut = (s: unknown, n: number) => { const t = String(s ?? "").replace(/\s+/g, " "); return t.length > n ? `${t.slice(0, n)}…` : t; };
 
-const PROMPT = `You are the observer of a team of peer agents. You read the record of one finished turn and report type-gaps. You do not judge the work itself.
-The peers coordinate only through gists. The schema has these gist types:
+/** The gist types peers can write now, for the observer and the evolver. Adopted types follow the built-in ones. */
+export const schemaText = () => `The schema has these gist types:
 - note { agent, text }: free text published to peers.
 - task { id, text, owner, done, result, files }: a unit of work that one peer claims and completes. files lists the paths its owner edits.
-A distortion is a state a peer wanted to share that has no field in these types, so it was written into free text or bent into another shape. Examples of the pattern (do not copy them unless they occur): an obligation handed to a named peer, an interface two tasks agreed on, a condition under which a statement stops being true.
+${store.types().map(({ body: t }) => `- ${t.name} { ${Object.keys(t.fields).join(", ")} }: ${t.purpose}\n`).join("")}`;
+
+const PROMPT = () => `You are the observer of a team of peer agents. You read the record of one finished turn and report type-gaps. You do not judge the work itself.
+The peers coordinate only through gists. ${schemaText()}A distortion is a state a peer wanted to share that has no field in these types, so it was written into free text or bent into another shape. Examples of the pattern (do not copy them unless they occur): an obligation handed to a named peer, an interface two tasks agreed on, a condition under which a statement stops being true.
 Report one type-gap per KIND of distortion in this turn, citing every gist line where it occurs. Ordinary findings, progress reports, tool errors and [failure] notes are not distortions. Reporting nothing is correct when the types were enough. A peer may already have reported a type-gap itself (a "type-gap" gist line); do not report the same kind again.
 For cost, write "unmeasured" unless the record itself shows extra work caused by the distortion (duplicate work, a stale change, a clarification round); then describe it and cite those lines too.
 Lines starting with "gist" are gists; lines starting with "event" are the surrounding episode, for judging cost only.
@@ -22,6 +25,7 @@ function render(rows: store.SubstrateRow[]) {
   return rows.map((r) => {
     const b = r.body as Record<string, unknown>;
     if (r.kind === "type-gap") return `gist #${r.seq} ${r.agent} type-gap: wanted ${cut(b.wanted, 300)}; written as ${cut(b.distortion, 300)}`;
+    if (r.kind === "gist") return `gist #${r.seq} ${r.agent} ${cut(b.id, 40)}: ${cut(b.text, 1500)}`;
     if (store.isGist(r)) return `gist #${r.seq} ${r.agent} ${r.kind === "publish" ? "note" : `task ${r.kind} ${cut(b.id, 40)}`}: ${cut(b.text, 1500)}`;
     if (r.kind === "tool") return `event #${r.seq} ${r.agent} ${b.name} ${cut(b.args, 200)} -> ${cut(b.output, 200)}`;
     return `event #${r.seq} ${r.agent} ${r.kind} ${cut(b.text, 300)}`;
@@ -47,7 +51,7 @@ export async function observeTurn(conv: string, turn: string, model: string, res
   if (!rows.some(store.isGist) || rows.some((r) => r.kind === "observe" && !(r.body as { error?: string }).error)) return 0;
   try {
     let text = "";
-    const events = response({ model, effort: "low", instructions: PROMPT, input: [{ role: "user", content: render(rows) }], tools: [], session: `${conv}:${OBSERVER}`, signal });
+    const events = response({ model, effort: "low", instructions: PROMPT(), input: [{ role: "user", content: render(rows) }], tools: [], session: `${conv}:${OBSERVER}`, signal });
     for await (const ev of events) if (ev.type === "text") text += ev.text;
     const gaps = parseGaps(text, rows);
     for (const gap of gaps) store.append({ conv, turn, agent: OBSERVER, kind: "type-gap", body: gap });

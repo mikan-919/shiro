@@ -30,14 +30,16 @@ if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().so
 // row was written under; bump it when a gist type is added, and keep reading old ones (docs/adr/0002).
 // v0: note (publish) and task (add, claim, complete, release). v1 adds type-gap, settled and retract.
 // v2 adds `files` to the task (the paths its owner edits).
+// v3 lets the schema grow as data: the evolver's type-proposal, the user's adopt and reject (conv "colony"), and gist,
+// a gist of an adopted type. Adopted types do not bump `v`; the adopt row's seq dates them.
 // Every other kind is an episode event, not a gist.
-export const SUBSTRATE_VERSION = 2;
+export const SUBSTRATE_VERSION = 3;
 db.run(`CREATE TABLE IF NOT EXISTS substrate (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, v INTEGER NOT NULL,
   conv TEXT NOT NULL, turn TEXT NOT NULL, agent TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL)`);
 
 export type SubstrateRow = { seq: number; at: number; v: number; conv: string; turn: string; agent: string; kind: string; body: unknown };
-const GIST_KINDS = new Set(["publish", "add", "claim", "complete", "release", "type-gap", "settled", "retract"]);
+const GIST_KINDS = new Set(["publish", "add", "claim", "complete", "release", "type-gap", "settled", "retract", "gist"]);
 /** A bubble mirrored into the notes ("Chat: ...") was written for the user, so it is not a gist. */
 export const isGist = (r: SubstrateRow) => GIST_KINDS.has(r.kind) && !(r.kind === "publish" && String((r.body as { text?: string }).text).startsWith("Chat: "));
 
@@ -58,6 +60,13 @@ export function settled(cwd: string): (SubstrateRow & { body: Settled })[] {
   const rows = db.query<Raw, []>(`SELECT * FROM substrate s WHERE kind = 'settled' AND NOT EXISTS (
     SELECT 1 FROM substrate r WHERE r.kind = 'retract' AND json_extract(r.body, '$.target') = s.seq) ORDER BY seq`).all().map(parse);
   return (rows as (SubstrateRow & { body: Settled })[]).filter((r) => r.body.cwd === null || r.body.cwd === cwd);
+}
+
+export type GistType = { name: string; purpose: string; fields: Record<string, string>; obligation: string };
+/** Proposals the user adopted, oldest first. Rejection is final, and nothing un-adopts a type: the schema only grows. */
+export function types(): (SubstrateRow & { body: GistType })[] {
+  return db.query<Raw, []>(`SELECT p.* FROM substrate p JOIN substrate a ON a.kind = 'adopt' AND json_extract(a.body, '$.target') = p.seq
+    WHERE p.kind = 'type-proposal' ORDER BY a.seq`).all().map(parse) as (SubstrateRow & { body: GistType })[];
 }
 
 type Row = { id: string; title: string; model: string; effort: Effort; created_at: number; updated_at: number; auto_approve: number };

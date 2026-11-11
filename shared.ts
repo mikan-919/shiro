@@ -86,7 +86,7 @@ export type ConvView = ConvMeta & { running: boolean };
 
 /** `files` (schema v2) is the set of paths the task's owner edits; tasks written before v2 have none. */
 export type Task = { id: string; text: string; owner?: string; done: boolean; result?: string; files?: string[] };
-export type Board = { tasks: Task[]; notes: { agent: string; text: string }[]; statuses?: Record<string, string> };
+export type Board = { tasks: Task[]; notes: { agent: string; text: string }[]; gists?: { agent: string; type: string; fields: Record<string, string> }[]; statuses?: Record<string, string> };
 
 export type Ev = { message?: string } & (
   | { t: "board"; board: Board }
