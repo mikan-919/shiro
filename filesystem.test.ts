@@ -96,14 +96,14 @@ test("large/binary files skipped, long search output capped, directory listing b
   expect(Buffer.byteLength(results)).toBeLessThan(50200);
 });
 
-function runner() {
+function runner(fullAccess = false) {
   const approvals = new Map<string, (ok: boolean) => void>();
   const statuses: string[] = [];
   const call = createToolRunner({
     message: "files-test", signal: new AbortController().signal,
     emit: (e) => { if (e.t === "tool_status") statuses.push(e.status); },
     chat: ctx().chat, team: undefined,
-    settings: () => ({ model: "test", autoApprove: false }), approvals,
+    settings: () => ({ model: "test", autoApprove: false, fullAccess }), approvals,
     cwd: dir, task: "Inspect project files", exclusive: (f) => f(),
   });
   return { approvals, statuses, call: (name: string, args: object) => call({ type: "function_call", name, call_id: crypto.randomUUID(), arguments: JSON.stringify(args) }) };
@@ -136,4 +136,11 @@ test("registered read-only tools execute through runner without approval", async
   expect(result.result.hasSubdirectory).toBe(true);
   expect(r.approvals.size).toBe(0);
   expect(r.statuses).not.toContain("awaiting");
+});
+
+test("Full Access runs commands without asking", async () => {
+  const r = runner(true);
+  expect(await r.call("bash", { command: "printf full" })).toBe("exit 0\nfull");
+  expect(r.statuses).not.toContain("awaiting");
+  expect(r.statuses).not.toContain("judging");
 });

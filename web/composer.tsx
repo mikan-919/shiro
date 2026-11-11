@@ -35,7 +35,7 @@ function clipBox(el: HTMLElement): { top: number; bottom: number } {
 }
 
 /** `auto`: commands are being auto-approved (Jev available and the setting on). */
-export function SettingsPicker({ settings, jev, auto, onChange }: { settings: Settings; jev: boolean; auto: boolean; onChange: (patch: Partial<Settings>) => void }) {
+export function SettingsPicker({ settings, jev, auto, full, onChange }: { settings: Settings; jev: boolean; auto: boolean; full: boolean; onChange: (patch: Partial<Settings>) => void }) {
   const pop = usePopover();
   const [place, setPlace] = useState({ up: true, max: 480 });
   const effortIndex = Math.max(0, EFFORTS.findIndex((e) => e.id === settings.effort));
@@ -49,7 +49,8 @@ export function SettingsPicker({ settings, jev, auto, onChange }: { settings: Se
   return (
     <div className="picker" ref={pop.ref}>
       <button type="button" className="picker-btn" onClick={toggle} aria-expanded={pop.open} aria-haspopup="dialog">
-        {auto && <span className="picker-auto" title="コマンドの自動承認が有効です"><Icon name="shield" size={14} /></span>}
+        {full ? <span className="picker-full" title="Full Access: すべてのコマンドを確認せずに実行します"><Icon name="alert" size={14} /></span>
+          : auto && <span className="picker-auto" title="コマンドの自動承認が有効です"><Icon name="shield" size={14} /></span>}
         <Icon name="tune" size={16} />
         <span className="picker-model">{MODELS.find((m) => m.id === settings.model)?.name ?? settings.model}</span>
         <span className="picker-effort">{EFFORTS[effortIndex]?.name}</span>
@@ -84,6 +85,13 @@ export function SettingsPicker({ settings, jev, auto, onChange }: { settings: Se
               </span>
             </span>
             <input type="checkbox" role="switch" className="switch" checked={auto} disabled={!jev} onChange={(e) => onChange({ autoApprove: e.target.checked })} />
+          </label>
+          <label className="toggle-row">
+            <span className="toggle-text">
+              <span>Full Access</span>
+              <span className="toggle-help">すべてのコマンドとファイル編集を、確認せずに実行します</span>
+            </span>
+            <input type="checkbox" role="switch" className="switch" checked={full} onChange={(e) => onChange({ fullAccess: e.target.checked })} />
           </label>
         </div>
       )}

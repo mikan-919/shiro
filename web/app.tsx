@@ -139,7 +139,7 @@ function App() {
             {showThread && <span className="who-title" key={conv.meta.id}>{conv.meta.title}</span>}
           </h1>
           <div className="top-actions">
-            {!live.contextPage && srv && <SettingsPicker settings={settings} jev={srv.jev} auto={autoApproving} onChange={updateSettings} />}
+            {!live.contextPage && srv && <SettingsPicker settings={settings} jev={srv.jev} auto={autoApproving} full={settings.fullAccess} onChange={updateSettings} />}
             {live.currentId && <button type="button" className="btn small" aria-pressed={live.contextPage} onClick={() => live.contextPage ? live.open(live.currentId) : live.openContext()}>{live.contextPage ? "チャット" : "共有文脈"}</button>}
             <IconButton icon="compose" label="新しい会話" onClick={newChat} />
           </div>

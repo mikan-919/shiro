@@ -18,7 +18,7 @@ function setup(exclusive?: (run: () => Promise<string>) => Promise<string>) {
   const call = createToolRunner({
     message: "test", signal: ctl.signal, emit: (e) => { events.push(e); },
     chat: { say: (text) => { said.push(text); }, react: () => true }, team: undefined,
-    settings: () => ({ model: "test", autoApprove: false }), approvals, cwd: dir, task: "test",
+    settings: () => ({ model: "test", autoApprove: false, fullAccess: false }), approvals, cwd: dir, task: "test",
     exclusive: exclusive ?? ((run) => run()), onCall: (v) => { trace.push(v); },
   });
   return { call, ctl, events, approvals, trace, said };

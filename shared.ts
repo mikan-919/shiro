@@ -18,7 +18,7 @@ export type Effort = (typeof EFFORTS)[number]["id"];
 export const isEffort = (v: unknown): v is Effort => EFFORTS.some((e) => e.id === v);
 
 /** What a new conversation starts with when the user has not chosen otherwise. */
-export const DEFAULTS = { effort: "medium" as Effort, autoApprove: true };
+export const DEFAULTS = { effort: "medium" as Effort, autoApprove: true, fullAccess: false };
 
 export type ToolStatus = "judging" | "running" | "awaiting" | "done" | "denied" | "error";
 
@@ -78,10 +78,12 @@ export type ConvMeta = {
   model: string;
   effort: Effort;
   autoApprove: boolean;
+  /** Full Access: every tool call runs without Jev or the user. */
+  fullAccess: boolean;
   createdAt: number;
   updatedAt: number;
 };
-export type Settings = Pick<ConvMeta, "model" | "effort" | "autoApprove">;
+export type Settings = Pick<ConvMeta, "model" | "effort" | "autoApprove" | "fullAccess">;
 export type ConvView = ConvMeta & { running: boolean };
 
 /** `files` (schema v2) is the set of paths the task's owner edits; tasks written before v2 have none. */

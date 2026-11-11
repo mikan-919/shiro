@@ -12,7 +12,7 @@ type RunnerOptions = {
   chat: ToolContext["chat"];
   team: ToolContext["team"];
   substrate?: ToolContext["substrate"];
-  settings: () => Pick<Settings, "model" | "autoApprove">;
+  settings: () => Pick<Settings, "model" | "autoApprove" | "fullAccess">;
   approvals: Map<string, (ok: boolean) => void>;
   cwd: string;
   task: string | (() => string);
@@ -25,6 +25,7 @@ type RunnerOptions = {
 export function createToolRunner({ message, signal, emit, chat, team, substrate, settings, approvals, cwd, task, exclusive, onCall }: RunnerOptions) {
   async function approved(id: string, request: string, callSignal: AbortSignal) {
     callSignal.throwIfAborted();
+    if (settings().fullAccess) return true;
     if (settings().autoApprove && jevEnabled()) {
       emit({ t: "tool_status", id, status: "judging" });
       const verdict = await judge(request, cwd, typeof task === "function" ? task() : task, callSignal);

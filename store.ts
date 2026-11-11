@@ -24,6 +24,8 @@ if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().so
 
 if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "board"))
   db.run("ALTER TABLE conversations ADD COLUMN board TEXT");
+if (!db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "full_access"))
+  db.run("ALTER TABLE conversations ADD COLUMN full_access INTEGER NOT NULL DEFAULT 0");
 
 // The substrate: every coordination event, appended and never rewritten or evicted. Rows outlive board resets,
 // edits, regeneration and conversation deletion, so replay can read them later. `v` is the schema version the
@@ -69,15 +71,15 @@ export function types(): (SubstrateRow & { body: GistType })[] {
     WHERE p.kind = 'type-proposal' ORDER BY a.seq`).all().map(parse) as (SubstrateRow & { body: GistType })[];
 }
 
-type Row = { id: string; title: string; model: string; effort: Effort; created_at: number; updated_at: number; auto_approve: number };
+type Row = { id: string; title: string; model: string; effort: Effort; created_at: number; updated_at: number; auto_approve: number; full_access: number };
 const meta = (r: Row): ConvMeta => ({
-  id: r.id, title: r.title, model: r.model, effort: r.effort, autoApprove: r.auto_approve === 1, createdAt: r.created_at, updatedAt: r.updated_at,
+  id: r.id, title: r.title, model: r.model, effort: r.effort, autoApprove: r.auto_approve === 1, fullAccess: r.full_access === 1, createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
 const cache = new Map<string, Conv>();
 
 export function list(): ConvMeta[] {
-  const rows = db.query<Row, []>("SELECT id, title, model, effort, auto_approve, created_at, updated_at FROM conversations ORDER BY updated_at DESC").all();
+  const rows = db.query<Row, []>("SELECT id, title, model, effort, auto_approve, full_access, created_at, updated_at FROM conversations ORDER BY updated_at DESC").all();
   return rows.map((r) => cache.get(r.id)?.meta ?? meta(r));
 }
 
@@ -103,11 +105,11 @@ export function create(m: Settings): Conv {
 export function save(c: Conv) {
   const m = c.meta;
   db.query(
-    `INSERT INTO conversations (id, title, model, effort, auto_approve, created_at, updated_at, messages, items, board)
-     VALUES ($id, $title, $model, $effort, $auto, $created, $updated, $messages, $items, $board)
-     ON CONFLICT(id) DO UPDATE SET title=$title, model=$model, effort=$effort, auto_approve=$auto, updated_at=$updated, messages=$messages, items=$items, board=$board`,
+    `INSERT INTO conversations (id, title, model, effort, auto_approve, full_access, created_at, updated_at, messages, items, board)
+     VALUES ($id, $title, $model, $effort, $auto, $full, $created, $updated, $messages, $items, $board)
+     ON CONFLICT(id) DO UPDATE SET title=$title, model=$model, effort=$effort, auto_approve=$auto, full_access=$full, updated_at=$updated, messages=$messages, items=$items, board=$board`,
   ).run({
-    id: m.id, title: m.title, model: m.model, effort: m.effort, auto: m.autoApprove ? 1 : 0, created: m.createdAt, updated: m.updatedAt,
+    id: m.id, title: m.title, model: m.model, effort: m.effort, auto: m.autoApprove ? 1 : 0, full: m.fullAccess ? 1 : 0, created: m.createdAt, updated: m.updatedAt,
     messages: JSON.stringify(c.messages), items: JSON.stringify(c.items), board: c.board ? JSON.stringify(c.board) : null,
   });
 }

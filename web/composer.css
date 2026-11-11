@@ -85,6 +85,7 @@
 
 
 .picker-auto { color: var(--pine); display: grid; }
+.picker-full { color: var(--rust); display: grid; }
 
 .toggle-row { display: flex; align-items: center; gap: 12px; padding: 6px 10px 8px; cursor: pointer; }
 .toggle-row.is-off { cursor: default; }

@@ -234,7 +234,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
     },
 
     create(s: Partial<Settings>): ConvView {
-      const c = store.create({ model: s.model ?? defaultModel, effort: s.effort ?? DEFAULTS.effort, autoApprove: s.autoApprove ?? DEFAULTS.autoApprove });
+      const c = store.create({ model: s.model ?? defaultModel, effort: s.effort ?? DEFAULTS.effort, autoApprove: s.autoApprove ?? DEFAULTS.autoApprove, fullAccess: s.fullAccess ?? DEFAULTS.fullAccess });
       publish({ type: "meta", meta: view(c.meta) });
       return view(c.meta);
     },

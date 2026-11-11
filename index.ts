@@ -34,6 +34,7 @@ const settingsIn = (b: Record<string, unknown>) => ({
   ...(isModel(b.model) && { model: b.model }),
   ...(isEffort(b.effort) && { effort: b.effort }),
   ...(typeof b.autoApprove === "boolean" && { autoApprove: b.autoApprove }),
+  ...(typeof b.fullAccess === "boolean" && { fullAccess: b.fullAccess }),
 });
 
 const server = Bun.serve({
