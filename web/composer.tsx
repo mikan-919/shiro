@@ -60,7 +60,7 @@ export function SettingsPicker({ settings, jev, auto, full, onChange }: { settin
         <div className={`popover picker-pop ${place.up ? "up" : "down"} ${pop.leaving ? "leaving" : ""}`} style={{ ...pop.style, maxHeight: place.max }} role="dialog" aria-label="モデルの選択">
           <div role="radiogroup" aria-label="モデル">
             {MODELS.map((m) => (
-              <button type="button" role="radio" aria-checked={m.id === settings.model} key={m.id} className="pop-item" onClick={() => onChange({ model: m.id })}>
+              <button type="button" role="radio" aria-checked={m.id === settings.model} key={m.id} className="pop-item swap" onClick={() => onChange({ model: m.id })}>
                 <span>{m.name}</span>
                 {m.id === settings.model && <Icon name="check" size={16} />}
               </button>

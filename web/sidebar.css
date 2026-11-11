@@ -1,39 +1,37 @@
 .sidebar {
   width: 272px;
   flex: none;
-  display: none;
+  display: flex;
   flex-direction: column;
   background: var(--side-bg);
   border-right: 1px solid var(--line);
   padding: 10px 10px 0;
   min-height: 0;
+  /* Closed, it is off screen and out of the tab order. It turns hidden only once it has slid away, and visible at once. */
+  visibility: hidden;
 }
-.side-open .sidebar { display: flex; }
+.side-open .sidebar { visibility: visible; }
 .scrim { display: none; }
 
 /* 900px is also the breakpoint wide() checks in app.tsx. */
 @media (min-width: 900px) {
-  .sidebar {
-    opacity: 0;
-    transform: translateX(-12px);
-    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), display 200ms allow-discrete;
-  }
-  .side-open .sidebar { opacity: 1; transform: none; }
-  @starting-style { .side-open .sidebar { opacity: 0; transform: translateX(-12px); } }
+  /* The column slides out past the left edge and the conversation widens after it, so nothing jumps sideways.
+     This animates layout, on purpose: the alternative is the whole conversation moving 272px in one frame. */
+  .sidebar { margin-left: -272px; transition: margin-left 240ms var(--ease-drawer), visibility 0s 240ms; }
+  .side-open .sidebar { margin-left: 0; transition: margin-left 240ms var(--ease-drawer); }
 }
 
 @media (max-width: 899px) {
   .sidebar {
-    display: flex;
     position: fixed;
     inset: 0 auto 0 0;
     width: min(86vw, 304px);
     z-index: 40;
     transform: translateX(-100%);
-    transition: transform 240ms var(--ease-drawer);
+    transition: transform 240ms var(--ease-drawer), visibility 0s 240ms;
     box-shadow: var(--shadow);
   }
-  .side-open .sidebar { transform: none; }
+  .side-open .sidebar { transform: none; transition: transform 240ms var(--ease-drawer); }
   /* The scrim fades with the drawer instead of popping in and vanishing ahead of it. */
   .scrim { display: block; position: fixed; inset: 0; background: var(--scrim); z-index: 30; opacity: 0; pointer-events: none; transition: opacity 240ms var(--ease-drawer); }
   .side-open .scrim { opacity: 1; pointer-events: auto; }
@@ -62,8 +60,8 @@
   font-size: 14.5px;
   font-weight: 500;
 }
-.new-chat:hover { background: var(--surface); }
-.new-chat:active { transform: scale(0.97); }
+.new-chat:active { background: var(--surface); }
+@media (hover: hover) { .new-chat:hover { background: var(--surface); } }
 .new-chat kbd { margin-left: auto; }
 
 .search {
@@ -76,6 +74,7 @@
   border-radius: 10px;
   border: 1px solid var(--line);
   color: var(--faint);
+  transition: border-color 0.15s;
 }
 .search:focus-within { border-color: var(--muted); }
 .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 14px; color: var(--text); }
@@ -96,11 +95,13 @@
   text-decoration: none;
   font-size: 14px;
   color: var(--muted);
+  transition: var(--press);
 }
-.conv > a:hover { background: var(--surface); color: var(--text); }
+.conv > a:active { background: var(--surface); color: var(--text); scale: 0.98; }
+@media (hover: hover) { .conv > a:hover { background: var(--surface); color: var(--text); } }
 .conv.active > a { background: var(--surface); color: var(--text); font-weight: 500; }
 .conv-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.conv-menu { position: absolute; right: 2px; top: 50%; translate: 0 -50%; opacity: 0; }
+.conv-menu { position: absolute; right: 2px; top: 50%; translate: 0 -50%; opacity: 0; transition: opacity 0.12s; }
 .conv:hover .conv-menu, .conv.active .conv-menu, .conv-menu:focus-within { opacity: 1; }
 @media (hover: none) { .conv-menu { opacity: 1; } }
 .conv.editing input {
@@ -115,6 +116,9 @@
 .conv.confirming { background: var(--surface); padding: 9px 10px; display: grid; gap: 8px; font-size: 13px; }
 .conv.confirming .conv-title { white-space: normal; }
 .confirm-row { display: flex; gap: 6px; }
+/* Renaming and the delete question replace the row's contents; they fade in so the swap does not read as a glitch. */
+.conv.editing input, .conv.confirming > * { transition: opacity 160ms var(--ease-out); }
+@starting-style { .conv.editing input, .conv.confirming > * { opacity: 0; } }
 
 .live-dot {
   width: 7px;
@@ -152,3 +156,8 @@
 .theme-switch .seg-thumb { border-radius: 7px; background: var(--surface); }
 
 .menu-pop { top: calc(100% + 4px); right: 0; min-width: 160px; transform-origin: top right; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* base.css keeps only fades, but would still hold the closed sidebar on screen for the length of a slide that no longer plays. */
+  .sidebar { transition: none !important; }
+}

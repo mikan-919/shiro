@@ -45,7 +45,8 @@
   border: 2px solid var(--bg);
   font-size: 16px;
   line-height: 1;
-  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+  /* A reaction is rare and playful, so it may land with a little overshoot. */
+  transition: opacity 200ms var(--ease-out), transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 @starting-style { .reaction { opacity: 0; transform: scale(0.6); } }
 
@@ -61,20 +62,30 @@
   place-items: center;
   border-radius: 50%;
   font-size: 20px;
-  transition: background-color 0.12s, transform 160ms var(--ease-out);
+  transition: background-color 0.12s, transform 160ms var(--ease-out), var(--press);
+  /* The emoji rise one after another (thread.tsx numbers them in --i). An animation, not a transition, so the delay does not hold back the hover. */
+  animation: emoji-in 280ms var(--ease-out) backwards;
+  animation-delay: calc(var(--i) * 20ms);
 }
+@keyframes emoji-in { from { opacity: 0; transform: translateY(6px) scale(0.7); } }
+.reaction-pop button:active { scale: 0.9; }
 .reaction-pop button.on { background: var(--surface); }
 @media (hover: hover) and (pointer: fine) {
   .reaction-pop button:hover { background: var(--surface); transform: scale(1.12); }
 }
 
-/* Typing: three dots pulsing one after another while the agent works. */
+/* Typing: a wave through three dots while the agent works. Each lifts and brightens, then rests for half the cycle. */
 .typing { display: flex; gap: 5px; padding: 15px 18px; }
-.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: breathe 1.2s ease-in-out infinite; }
-.typing i:nth-child(2) { animation-delay: 0.15s; }
-.typing i:nth-child(3) { animation-delay: 0.3s; }
+.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: 0.35; animation: typing 1.4s ease-in-out infinite; }
+.typing i:nth-child(2) { animation-delay: 0.16s; }
+.typing i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes typing {
+  25% { opacity: 1; transform: translateY(-3px); }
+  50%, 100% { opacity: 0.35; transform: none; }
+}
 
 .user-images { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-bottom: 4px; }
+.thumb { cursor: zoom-in; }
 .thumb img { display: block; max-width: 220px; max-height: 180px; border-radius: 18px; border: 1px solid var(--line); object-fit: cover; }
 
 .msg-foot { display: flex; align-items: center; margin-left: -6px; }
@@ -126,9 +137,14 @@
   box-shadow: var(--shadow);
   font-size: 13px;
   color: var(--muted);
-  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out), var(--press);
 }
 @starting-style { .to-latest { opacity: 0; transform: translateY(6px); } }
+.to-latest.leaving { opacity: 0; transform: translateY(6px); transition-duration: var(--exit); pointer-events: none; }
+
+/* What appears when a turn ends or an edit begins fades in, so the end of a reply does not snap. */
+.msg-foot, .note, .error-box, .edit-box, .edit-actions { transition: opacity 200ms var(--ease-out); }
+@starting-style { .msg-foot, .note, .error-box, .edit-box, .edit-actions { opacity: 0; } }
 
 /* Bubbles and steps that arrive while you watch pop up from their side; history loads still. */
 .row.is-new, .msg.is-new .row, .msg.is-new .step {
@@ -148,3 +164,8 @@
 
 .sender.peer-three::before { background: #c28a55; }
 .sender.peer-four::before { background: #639caf; }
+
+@media (prefers-reduced-motion: reduce) {
+  .typing i { animation-name: breathe; opacity: 1; }
+  .reaction-pop button { animation: none; }
+}

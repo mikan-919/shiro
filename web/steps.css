@@ -23,7 +23,8 @@
   font-size: 14px;
   color: var(--muted);
 }
-.step-head:hover { color: var(--text); }
+.step-head:not(:disabled):active { color: var(--text); scale: none; }
+@media (hover: hover) { .step-head:hover { color: var(--text); } }
 .step-node {
   position: relative;
   width: 23px;

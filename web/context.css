@@ -1,5 +1,6 @@
 .context-page { flex: 1; min-height: 0; overflow-y: auto; }
-.context-column { max-width: 58rem; margin: 0 auto; padding: 24px 24px 48px; display: flex; flex-direction: column; gap: 22px; }
+.context-column { max-width: 58rem; margin: 0 auto; padding: 24px 24px 48px; display: flex; flex-direction: column; gap: 22px; transition: opacity 180ms var(--ease-out); }
+@starting-style { .context-column { opacity: 0; } }
 .context-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .context-heading h1 { margin: 0; font-size: 24px; font-weight: 700; }
 .context-eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
@@ -15,7 +16,9 @@
 .context-section-head > span { color: var(--muted); font-size: 12px; }
 .context-tasks, .context-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .context-tasks { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
-.context-card { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; }
+.context-card { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out); }
+/* A note or task published while you watch, or let in by a filter, rises into the list. */
+@starting-style { .context-card { opacity: 0; transform: translateY(4px); } }
 .context-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .context-card-head .sender { padding-left: 0; }
 .context-card p { margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; }
@@ -26,7 +29,7 @@
 .context-result p { margin-top: 4px; }
 .context-task-id { display: block; margin-top: 12px; }
 .context-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.context-filters button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; }
+.context-filters button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, var(--press); }
 .context-filters button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; }
 .context-filters button span { opacity: .7; }
 .context-empty { margin: 12px 0; padding: 20px; color: var(--muted); background: var(--surface); border-radius: 12px; font-size: 13px; }

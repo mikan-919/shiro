@@ -11,6 +11,7 @@
 .topbar > .icon-btn { width: 42px; height: 42px; border-radius: 50%; background: var(--surface); justify-self: start; }
 .top-actions { display: flex; align-items: center; gap: 4px; justify-self: end; }
 .top-actions > .icon-btn { width: 42px; height: 42px; border-radius: 50%; background: var(--surface); }
+@media (hover: hover) { .topbar .icon-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--surface) 90%, var(--text)); } }
 
 /* Who you are talking to: an avatar with the name under it, and the conversation in small type. */
 .who { margin: 0; display: grid; justify-items: center; gap: 2px; min-width: 0; max-width: 46vw; font: inherit; }
@@ -23,6 +24,9 @@
   background: var(--accent-bg);
   color: var(--accent-fg);
 }
+/* The ring turns while shiro works, and stops where it is when the turn ends. */
+.who-avatar .icon { animation: spin 6s linear infinite paused; }
+.who-avatar.is-live .icon { animation-play-state: running; }
 .who-name { font: 600 14px/1.2 var(--mincho); letter-spacing: 0.06em; }
 .who-title {
   max-width: 100%;
@@ -42,9 +46,13 @@
   padding: 4px 12px;
   border: 1px solid color-mix(in srgb, var(--rust) 40%, transparent);
   border-radius: 999px;
+  transition: opacity 200ms var(--ease-out);
 }
+@starting-style { .offline { opacity: 0; } }
 
-.center { flex: 1; display: grid; place-items: center; }
+/* The spinner waits 150ms before it shows, so a conversation that loads at once never flashes it. */
+.center { flex: 1; display: grid; place-items: center; transition: opacity 200ms var(--ease-out) 150ms; }
+@starting-style { .center { opacity: 0; } }
 
 .dock { flex: none; padding: 6px 16px max(12px, env(safe-area-inset-bottom)); }
 .dock .composer { max-width: var(--column); margin: 0 auto; }
@@ -82,7 +90,7 @@
   pointer-events: none;
   transition: opacity 150ms var(--ease-out);
 }
-@starting-style { .drop { opacity: 0; } }
+.drop.leaving { opacity: 0; }
 .drop p {
   margin: 0;
   padding: 40px 56px;
@@ -90,6 +98,11 @@
   border-radius: 20px;
   font: 500 20px/1.5 var(--mincho);
   letter-spacing: 0.05em;
+  transition: transform 200ms var(--ease-out);
+}
+@starting-style {
+  .drop { opacity: 0; }
+  .drop p { transform: scale(0.96); }
 }
 
 .lightbox {
@@ -100,14 +113,17 @@
   place-items: center;
   background: rgb(10 8 6 / 0.86);
   outline: 0;
+  cursor: zoom-out;
   transition: opacity var(--exit) var(--ease-out);
 }
-.lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 10px; transition: transform var(--exit) var(--ease-out); }
-@starting-style {
-  .lightbox { opacity: 0; }
-  .lightbox img { transform: scale(0.96); }
-}
+/* The image's own movement, out of its thumbnail and back, is Lightbox in app.tsx. */
+.lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 10px; }
+@starting-style { .lightbox { opacity: 0; } }
 .lightbox.leaving { opacity: 0; pointer-events: none; }
-.lightbox.leaving img { transform: scale(0.96); }
 .lightbox-close { position: absolute; top: 14px; right: 14px; color: #eae8e0; }
-.lightbox-close:hover:not(:disabled) { background: rgb(255 255 255 / 0.12); color: #fff; }
+.lightbox-close:not(:disabled):is(:hover, :active) { background: rgb(255 255 255 / 0.12); color: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .who-avatar .icon { animation: none; }
+  .who-avatar.is-live .icon { animation: breathe 1.6s ease-in-out infinite; }
+}

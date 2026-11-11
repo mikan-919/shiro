@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 export const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Reads an easing token from base.css so JS-driven motion (WAAPI) uses the same curves as CSS. */
-export const cssEase = (name: "--ease-out" | "--ease-in-out") =>
+export const cssEase = (name: "--ease-out" | "--ease-in-out" | "--ease-drawer") =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "ease-out";
 
 /**

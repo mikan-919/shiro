@@ -45,6 +45,8 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Press feedback, as one item of a transition list: a rule that sets its own transition ends it with var(--press). */
+  --press: scale 160ms var(--ease-out);
 }
 /* The theme switch (web/sidebar.tsx) sets data-theme; without it the system setting decides. */
 :root[data-theme="light"] { color-scheme: light; }
@@ -65,8 +67,11 @@ body {
 }
 button, input, textarea, select { font: inherit; color: inherit; }
 pre, code, samp { font-family: var(--sans); }
-button { cursor: pointer; background: none; border: 0; padding: 0; }
+button { cursor: pointer; background: none; border: 0; padding: 0; transition: var(--press); }
 button:disabled { cursor: default; }
+/* Every button gives a little under the pointer: the interface heard the press. Menu rows and segments opt out. */
+button:not(:disabled):active { scale: 0.97; }
+button, a { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 a { color: inherit; }
 :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border-radius: 6px; }
 ::selection { background: color-mix(in srgb, var(--pine) 35%, transparent); }
@@ -89,11 +94,18 @@ kbd {
   height: 34px;
   border-radius: 9px;
   color: var(--muted);
-  transition: background-color 0.12s, color 0.12s;
+  transition: background-color 0.12s, color 0.12s, var(--press);
 }
-.icon-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+/* Hover styles are for pointers that hover; a touch would leave them stuck on after the tap. */
+@media (hover: hover) { .icon-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); } }
+/* 3% of a 34px button is one pixel, so the small round buttons give more. */
+.icon-btn:not(:disabled):active { background: var(--surface); color: var(--text); scale: 0.9; }
 .icon-btn:disabled { opacity: 0.35; }
 .icon-btn.small { width: 30px; height: 30px; }
+/* An icon that changes in place (copy to check, the tick on a chosen model, stop beside send) blurs in instead of cutting. */
+.swap .icon, .send .icon { transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out), filter 160ms var(--ease-out); }
+@starting-style { .swap .icon, .send .icon { opacity: 0; transform: scale(0.6); filter: blur(3px); } }
+.icon-btn.swap.done { color: var(--pine); }
 
 .btn {
   display: inline-flex;
@@ -105,12 +117,14 @@ kbd {
   background: var(--raised);
   font-size: 14px;
   font-weight: 500;
-  transition: background-color 0.12s, border-color 0.12s, transform 160ms var(--ease-out);
+  transition: background-color 0.12s, border-color 0.12s, var(--press);
 }
-.btn:hover:not(:disabled) { border-color: var(--muted); }
 .btn:disabled { opacity: 0.45; }
 .btn.primary { background: var(--accent-bg); color: var(--accent-fg); border-color: var(--accent-bg); }
-.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-bg) 86%, var(--bg)); }
+@media (hover: hover) {
+  .btn:hover:not(:disabled) { border-color: var(--muted); }
+  .btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-bg) 86%, var(--bg)); }
+}
 .btn.danger { background: var(--rust); border-color: var(--rust); color: #fff; }
 .btn.small { padding: 4px 10px; font-size: 13px; border-radius: 8px; }
 .btn.large { padding: 11px 22px; font-size: 15px; border-radius: 12px; }
@@ -123,8 +137,6 @@ kbd {
 }
 .spin.large { width: 22px; height: 22px; color: var(--faint); }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-.btn:not(:disabled):active { transform: scale(0.97); }
 
 @keyframes breathe { 50% { opacity: 0.35; } }
 
@@ -163,7 +175,8 @@ pre {
   text-align: left;
   white-space: nowrap;
 }
-.pop-item:hover { background: var(--surface); }
+.pop-item:not(:disabled):active { background: var(--surface); scale: none; }
+@media (hover: hover) { .pop-item:hover { background: var(--surface); } }
 .pop-item > span { flex: 1; }
 .pop-item.danger { color: var(--rust); }
 .pop-sep { height: 1px; background: var(--line); margin: 6px 4px; }
@@ -185,6 +198,7 @@ pre {
 
 .seg { position: relative; }
 .seg > button { position: relative; z-index: 1; transition: color 150ms ease; }
+.seg > button:not(:disabled):active { scale: none; }
 /* The row sets --n (options) and --i (selected); --gap is the space between its buttons. The row has 2px padding. */
 .seg-thumb {
   position: absolute;

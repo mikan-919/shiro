@@ -10,8 +10,13 @@
   font-size: 13.5px;
   font-weight: 500;
   color: var(--muted);
+  transition: background-color 0.12s, color 0.12s, var(--press);
 }
-.picker-btn:hover { background: var(--surface); color: var(--text); }
+.picker-btn:is(:active, [aria-expanded="true"]) { background: var(--surface); color: var(--text); }
+@media (hover: hover) { .picker-btn:hover { background: var(--surface); color: var(--text); } }
+/* The chevron turns over while the settings are open. */
+.picker-btn > .icon:last-child { transition: transform 200ms var(--ease-out); }
+.picker-btn[aria-expanded="true"] > .icon:last-child { transform: rotate(180deg); }
 .picker-effort { color: var(--faint); font-weight: 400; }
 .picker-pop { right: 0; width: 272px; overflow-y: auto; }
 .picker-pop.up { bottom: calc(100% + 8px); transform-origin: bottom right; }
@@ -62,10 +67,12 @@
   place-items: center;
   background: var(--me-bg);
   color: var(--me-fg);
-  transition: opacity 120ms ease, transform 160ms var(--ease-out);
+  transition: opacity 120ms ease, var(--press);
 }
 .send:disabled { opacity: 0.22; }
-.send:not(:disabled):active { transform: scale(0.97); }
+.send:not(:disabled):active { scale: 0.9; }
+/* The stop button arrives beside send when a turn starts. */
+@starting-style { .send.stop { opacity: 0; scale: 0.6; } }
 
 .attachments { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 8px 4px; }
 .attach { position: relative; width: 64px; height: 64px; }
@@ -82,7 +89,7 @@
   background: var(--accent-bg);
   color: var(--accent-fg);
 }
-
+.attach button:not(:disabled):active { scale: 0.85; }
 
 .picker-auto { color: var(--pine); display: grid; }
 .picker-full { color: var(--rust); display: grid; }
@@ -101,7 +108,7 @@
   background: var(--line);
   position: relative;
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition: background-color 200ms var(--ease-out);
 }
 .switch::after {
   content: "";
@@ -113,14 +120,14 @@
   border-radius: 50%;
   background: var(--raised);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
-  transition: transform 0.15s;
+  transition: transform 200ms var(--ease-out), width 200ms var(--ease-out);
 }
 .switch:checked { background: var(--pine); }
 .switch:checked::after { transform: translateX(15px); }
+/* Held down, the knob stretches toward the side it is about to go to. */
+.switch:not(:disabled):active::after { width: 20px; }
+.switch:checked:not(:disabled):active::after { transform: translateX(11px); }
 .switch:disabled { opacity: 0.4; cursor: default; }
-
-.send .icon { transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out); }
-@starting-style { .send .icon { opacity: 0; transform: scale(0.6); } }
 
 .attach { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
 @starting-style { .attach { opacity: 0; transform: scale(0.9); } }

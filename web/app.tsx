@@ -1,12 +1,12 @@
 import "./base.css";
-import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { StrictMode, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { DEFAULTS, type UserMessage } from "../shared";
 import { useLive, useStored, type Settings } from "./sync";
 import { Icon, IconButton } from "./ui";
 import { LoaderCircle } from "lucide-react";
-import { useLinger } from "./motion";
+import { cssEase, reducedMotion, useLinger } from "./motion";
 import { Composer, SettingsPicker, imageFiles, type ComposerHandle } from "./composer";
 import { ContextPage } from "./context";
 import { Thread } from "./thread";
@@ -16,6 +16,40 @@ import "./app.css";
 
 // The same 900px breakpoint switches the sidebar between drawer and column in sidebar.css.
 const wide = () => matchMedia("(min-width: 900px)").matches;
+/** How long the lightbox takes to close: its image's flight back and its backdrop's fade. */
+const ZOOM_OUT = 220;
+
+/**
+ * The enlarged image grows out of the thumbnail that was clicked and shrinks back into it; closing mid-flight
+ * carries on from where the image is. With no thumbnail in view it only settles into place, and with reduced
+ * motion nothing moves: the backdrop's fade (app.css) is all there is.
+ */
+function Lightbox({ src, from, leaving, style, onClose }: { src: string; from: HTMLElement | null; leaving: boolean; style: CSSProperties; onClose: () => void }) {
+  const img = useRef<HTMLImageElement>(null);
+  useLayoutEffect(() => {
+    const el = img.current;
+    if (!el || reducedMotion()) return;
+    const fly = () => {
+      const now = getComputedStyle(el).transform;
+      for (const a of el.getAnimations()) a.cancel();
+      const a = from?.getBoundingClientRect(), b = el.getBoundingClientRect();
+      const s = a && b.width ? a.width / b.width : 0;
+      const small = a && s > 0 && a.bottom > 0 && a.top < innerHeight
+        ? { transform: `translate(${a.left + a.width / 2 - b.left - b.width / 2}px, ${a.top + a.height / 2 - b.top - b.height / 2}px) scale(${s})`, borderRadius: `${parseFloat(getComputedStyle(from!).borderRadius) / s}px` }
+        : { transform: "scale(0.96)" };
+      // Leaving is quicker than arriving.
+      el.animate(leaving ? [{ transform: now }, small] : [small, { transform: "none" }], { duration: leaving ? ZOOM_OUT : 300, easing: cssEase("--ease-drawer"), fill: "both" });
+    };
+    if (el.complete) fly();
+    else el.addEventListener("load", fly, { once: true });
+  }, [leaving, from]);
+  return (
+    <div className={`lightbox ${leaving ? "leaving" : ""}`} style={style} role="dialog" aria-label="画像" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()} tabIndex={-1} ref={(el) => el?.focus()}>
+      <img ref={img} src={src} alt="" />
+      <IconButton icon="x" label="閉じる" className="lightbox-close" onClick={onClose} />
+    </div>
+  );
+}
 
 function App() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -32,8 +66,10 @@ function App() {
   const [sidebar, setSidebar] = useState(wide);
   const [query, setQuery] = useState("");
   const [lightboxSrc, setLightbox] = useState<string | null>(null);
-  const lightbox = useLinger(lightboxSrc, 200);
+  const lightbox = useLinger(lightboxSrc, ZOOM_OUT);
+  const lightboxFrom = useRef<HTMLElement | null>(null);
   const [dragging, setDragging] = useState(false);
+  const drop = useLinger(dragging || null, 150);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   /** Settings for the next new conversation; an open conversation keeps its own. */
   const [prefs, setPrefs] = useStored<Partial<Settings>>("shiro.new", {});
@@ -131,11 +167,11 @@ function App() {
         <header className="topbar">
           <IconButton icon="menu" label={sidebar ? "会話の一覧を閉じる" : "会話の一覧を開く"} onClick={() => setSidebar(!sidebar)} />
           <h1 className="who">
-            <span className="who-avatar" aria-hidden="true">
+            <span className={`who-avatar ${running ? "is-live" : ""}`} aria-hidden="true">
               <Icon name="ring" size={26} />
             </span>
             <span className="who-name">shiro</span>
-            {showThread && <span className="who-title" key={conv.meta.id}>{conv.meta.title}</span>}
+            {showThread && <span className="who-title" key={conv.meta.title}>{conv.meta.title}</span>}
           </h1>
           <div className="top-actions">
             {!live.contextPage && srv && <SettingsPicker settings={settings} jev={srv.jev} auto={autoApproving} full={settings.fullAccess} onChange={updateSettings} />}
@@ -157,7 +193,7 @@ function App() {
               onReact={live.react}
               onEdit={(m, t) => void send(t, m.images, m.id)}
               onRegenerate={regenerate}
-              onImage={setLightbox}
+              onImage={(src, from) => ((lightboxFrom.current = from), setLightbox(src))}
             />
           </>
         ) : live.currentId && !conv ? (
@@ -175,17 +211,12 @@ function App() {
         {!live.contextPage && <div className="dock">{composerEl}</div>}
       </main>
 
-      {dragging && (
-        <div className="drop" aria-hidden="true">
+      {drop.value && (
+        <div className={`drop ${drop.leaving ? "leaving" : ""}`} aria-hidden="true">
           <p>画像をここにドロップして添付</p>
         </div>
       )}
-      {lightbox.value && (
-        <div className={`lightbox ${lightbox.leaving ? "leaving" : ""}`} style={lightbox.style} role="dialog" aria-label="画像" onClick={() => setLightbox(null)} onKeyDown={(e) => e.key === "Escape" && setLightbox(null)} tabIndex={-1} ref={(el) => el?.focus()}>
-          <img src={lightbox.value} alt="" />
-          <IconButton icon="x" label="閉じる" className="lightbox-close" onClick={() => setLightbox(null)} />
-        </div>
-      )}
+      {lightbox.value && <Lightbox src={lightbox.value} from={lightboxFrom.current} leaving={lightbox.leaving} style={lightbox.style} onClose={() => setLightbox(null)} />}
       {toast.value && (
         <div className={`toast ${toast.leaving ? "leaving" : ""}`} style={toast.style} role="status">
           <Icon name="alert" size={16} />

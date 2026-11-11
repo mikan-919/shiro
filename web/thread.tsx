@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { assistantText, MODELS, type AssistantMessage, type ReasoningPart, type ToolPart, type UserMessage } from "../shared";
 import type { Conversation } from "./sync";
 import { CopyButton, Icon, IconButton, usePopover } from "./ui";
-import { useFollowBottom } from "./motion";
+import { useFollowBottom, useLinger } from "./motion";
 import { Md } from "./markdown";
 import { StepChain } from "./steps";
 import "./thread.css";
@@ -10,11 +10,14 @@ import "./thread.css";
 const modelName = (id: string) => MODELS.find((m) => m.id === id)?.name ?? id;
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
+/** `from` is the thumbnail's image, which the enlarged one grows out of. */
+type OnImage = (src: string, from: HTMLElement) => void;
+
 function Reaction({ emoji }: { emoji?: string }) {
   return emoji ? <span className="reaction" aria-label={`リアクション ${emoji}`}>{emoji}</span> : null;
 }
 
-function UserRow({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh: boolean; busy: boolean; onEdit: (text: string) => void; onImage: (src: string) => void }) {
+function UserRow({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh: boolean; busy: boolean; onEdit: (text: string) => void; onImage: OnImage }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.text);
   if (editing)
@@ -32,7 +35,7 @@ function UserRow({ m, fresh, busy, onEdit, onImage }: { m: UserMessage; fresh: b
       {m.images.length > 0 && (
         <div className="user-images">
           {m.images.map((src, i) => (
-            <button type="button" key={i} className="thumb" onClick={() => onImage(src)} aria-label="画像を拡大">
+            <button type="button" key={i} className="thumb" onClick={(e) => onImage(src, e.currentTarget.querySelector("img")!)} aria-label="画像を拡大">
               <img src={src} alt="" />
             </button>
           ))}
@@ -69,13 +72,14 @@ function Bubble({ text, reaction, onReact }: { text: string; reaction?: string; 
           <CopyButton get={() => text} />
           {pick.mounted && onReact && (
             <div className={`popover reaction-pop ${pick.leaving ? "leaving" : ""}`} style={pick.style} role="menu" aria-label="リアクション">
-              {REACTIONS.map((e) => (
+              {REACTIONS.map((e, i) => (
                 <button
                   type="button"
                   role="menuitemradio"
                   aria-checked={e === reaction}
                   key={e}
                   className={e === reaction ? "on" : ""}
+                  style={{ "--i": i } as CSSProperties}
                   onClick={() => (pick.setOpen(false), onReact(e === reaction ? null : e))}
                 >
                   {e}
@@ -158,9 +162,10 @@ function AssistantRows({ m, fresh, isLast, busy, onApprove, onReact, onRegenerat
 export function Thread({ conv, known, onApprove, onReact, onEdit, onRegenerate, onImage }: {
   conv: Conversation; known: Set<string>;
   onApprove: (call: string, ok: boolean) => void; onReact: (bubble: string, emoji: string | null) => void;
-  onEdit: (from: UserMessage, text: string) => void; onRegenerate: () => void; onImage: (src: string) => void;
+  onEdit: (from: UserMessage, text: string) => void; onRegenerate: () => void; onImage: OnImage;
 }) {
   const follow = useFollowBottom<HTMLDivElement, HTMLDivElement>({ tau: 200, near: 96 });
+  const latest = useLinger(follow.away || null, 150);
   const busy = conv.meta.running;
   const participants = conv.messages.filter((m): m is AssistantMessage => m.role === "assistant" && !!m.agent && m.status === "streaming");
   const lastAssistant = conv.messages.findLastIndex((m) => m.role === "assistant");
@@ -190,8 +195,8 @@ export function Thread({ conv, known, onApprove, onReact, onEdit, onRegenerate, 
           </div>
         )}
       </div>
-      {follow.away && (
-        <button type="button" className="to-latest" onClick={follow.toBottom}>
+      {latest.value && (
+        <button type="button" className={`to-latest ${latest.leaving ? "leaving" : ""}`} style={latest.style} onClick={follow.toBottom}>
           <Icon name="down" size={16} />
           最新へ
         </button>

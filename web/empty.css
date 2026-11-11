@@ -30,10 +30,10 @@
   border: 1px solid var(--line);
   font-size: 13.5px;
   color: var(--muted);
-  transition: border-color 0.12s, color 0.12s, transform 160ms var(--ease-out);
+  transition: border-color 0.12s, color 0.12s, var(--press);
 }
-.chip:hover { border-color: var(--muted); color: var(--text); }
-.chip:active { transform: scale(0.97); }
+.chip:active { border-color: var(--muted); color: var(--text); }
+@media (hover: hover) { .chip:hover { border-color: var(--muted); color: var(--text); } }
 
 .login { display: grid; justify-items: center; text-align: center; max-width: 30rem; }
 .login .greeting { margin-bottom: 12px; }

@@ -33,6 +33,7 @@ export function CopyButton({ get, label = "コピー" }: { get: () => string; la
     <IconButton
       icon={done ? "check" : "copy"}
       label={done ? "コピーしました" : label}
+      className={done ? "swap done" : "swap"}
       small
       onClick={async () => {
         await navigator.clipboard.writeText(get());
