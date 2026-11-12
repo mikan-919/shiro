@@ -120,7 +120,7 @@
 .lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 10px; }
 @starting-style { .lightbox { opacity: 0; } }
 .lightbox.leaving { opacity: 0; pointer-events: none; }
-.lightbox-close { position: absolute; top: 14px; right: 14px; color: #eae8e0; }
+.lightbox-close { position: absolute; top: 14px; right: 14px; color: #eceff2; }
 .lightbox-close:not(:disabled):is(:hover, :active) { background: rgb(255 255 255 / 0.12); color: #fff; }
 
 @media (prefers-reduced-motion: reduce) {

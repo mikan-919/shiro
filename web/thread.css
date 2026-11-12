@@ -157,13 +157,13 @@
 
 /* Participant identity without changing the chat layout. */
 .sender { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; padding-left: 8px; }
-.sender::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #729b80; flex: none; }
-.sender.peer-two::before { background: #8c87bc; }
+.sender::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #2f9e6b; flex: none; }
+.sender.peer-two::before { background: #6b62d6; }
 .team-presence { display: flex; flex-wrap: wrap; gap: 16px; padding: 8px 0; }
 .team-presence .typing { padding: 10px 12px; }
 
-.sender.peer-three::before { background: #c28a55; }
-.sender.peer-four::before { background: #639caf; }
+.sender.peer-three::before { background: #d98324; }
+.sender.peer-four::before { background: #2a93b8; }
 
 @media (prefers-reduced-motion: reduce) {
   .typing i { animation-name: breathe; opacity: 1; }

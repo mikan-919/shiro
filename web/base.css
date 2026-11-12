@@ -14,29 +14,29 @@
   font-display: swap;
 }
 
-/* shiro — soil and mycelium.
-   Light theme is the white of hyphae; dark theme is humus. Pine green means "allowed", rust means "stop". */
+/* shiro — paper and ink.
+   Neutral grays with a cool cast, white raised surfaces, near-black text. Green means "allowed", red means "stop", blue is the user's own messages. */
 
 :root {
   color-scheme: light dark;
-  --bg: light-dark(#efefea, #1c1814);
-  --side-bg: light-dark(#e6e5df, #17130f);
-  --surface: light-dark(#e3e2db, #26211b);
-  --raised: light-dark(#fafaf7, #2b251e);
-  --line: light-dark(#d4d1c6, #3a332a);
-  --text: light-dark(#221e18, #eae8e0);
-  --muted: light-dark(#6b6457, #a39a8b);
-  --faint: light-dark(#978f80, #776f62);
-  --pine: light-dark(#4e6e43, #8aac7a);
-  --rust: light-dark(#b24a33, #de7c62);
-  --ochre: light-dark(#8a6431, #c99a5b);
-  --accent-bg: light-dark(#221e18, #eae8e0);
-  --accent-fg: light-dark(#efefea, #1c1814);
-  --code-bg: light-dark(#e8e7e1, #14110d);
-  --me-bg: light-dark(#a8683a, #96582d);
-  --me-fg: #fff8f1;
-  --shadow: 0 1px 0 light-dark(rgb(34 30 24 / 0.04), rgb(0 0 0 / 0.2)), 0 10px 28px -14px light-dark(rgb(34 30 24 / 0.28), rgb(0 0 0 / 0.6));
-  --scrim: light-dark(rgb(34 30 24 / 0.32), rgb(0 0 0 / 0.5));
+  --bg: light-dark(#f6f7f9, #101214);
+  --side-bg: light-dark(#eceef2, #0b0d0f);
+  --surface: light-dark(#e6e9ee, #1b1e22);
+  --raised: light-dark(#ffffff, #1f2327);
+  --line: light-dark(#cdd3db, #30363d);
+  --text: light-dark(#101418, #eceff2);
+  --muted: light-dark(#4f5964, #9aa4af);
+  --faint: light-dark(#7a8490, #6b7480);
+  --pine: light-dark(#1f7a4d, #4cc38a);
+  --rust: light-dark(#c8321f, #f0705c);
+  --ochre: light-dark(#946200, #d9a441);
+  --accent-bg: light-dark(#101418, #eceff2);
+  --accent-fg: light-dark(#ffffff, #101214);
+  --code-bg: light-dark(#eceef2, #0a0c0e);
+  --me-bg: light-dark(#2450c8, #2f5bd3);
+  --me-fg: #ffffff;
+  --shadow: 0 1px 0 light-dark(rgb(16 20 24 / 0.04), rgb(0 0 0 / 0.2)), 0 10px 28px -14px light-dark(rgb(16 20 24 / 0.28), rgb(0 0 0 / 0.6));
+  --scrim: light-dark(rgb(16 20 24 / 0.32), rgb(0 0 0 / 0.5));
 
   --sans: "LINE Seed JP", sans-serif;
   --mincho: var(--sans);
