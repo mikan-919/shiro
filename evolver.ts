@@ -1,9 +1,9 @@
 // The evolver: once enough type-gap reports have piled up, proposes gist types for them and replays the reports
 // against each proposal. It adopts nothing: a proposal joins the schema only when the user adopts it (docs/adr/0003).
-// Run `bun evolver.ts` to list open proposals, `bun evolver.ts adopt|reject <number>` to decide one,
-// and `bun evolver.ts run` to evolve now regardless of the threshold.
+// The shared-context page lists open proposals, decides them, and can evolve now regardless of the threshold.
 import * as store from "./store";
-import { schemaText } from "./observer";
+import { observing, schemaText, unobserved } from "./observer";
+import { label, summarize } from "./report";
 import type { respond } from "./codex";
 import type { Colony } from "./shared";
 
@@ -100,8 +100,13 @@ export function decide(action: "adopt" | "reject", target: number) {
 export function colony(): Colony {
   const log = store.substrate();
   const retracted = new Set(log.filter((r) => r.kind === "retract").map((r) => (r.body as { target: number }).target));
+  const observed = log.filter((r) => r.kind === "observe").map((r) => (r.body as { error?: string }).error);
   return {
     version: store.SUBSTRATE_VERSION, threshold: THRESHOLD, pending: pending().length,
+    unobserved: unobserved().length, busy: { observing: observing(), evolving: running },
+    observer: { ran: observed.length, failed: observed.filter(Boolean).length, ...(observed.at(-1) && { error: observed.at(-1) }) },
+    turns: summarize(log.filter((r) => r.conv !== COLONY)).map((t) => ({ ...t, peers: t.peers.size })).reverse(),
+    labelled: log.filter(label).map((r) => ({ seq: r.seq, at: r.at, agent: r.agent, text: (r.body as { text: string }).text })).reverse(),
     types: store.types().map((r) => ({ seq: r.seq, at: r.at, ...r.body })),
     proposals: open().map((r) => ({ seq: r.seq, at: r.at, ...r.body })).reverse(),
     reports: log.filter((r) => r.kind === "type-gap").map((r) => ({ seq: r.seq, at: r.at, conv: r.conv, ...(r.body as Omit<Colony["reports"][number], "seq" | "at" | "conv">) })).reverse(),
@@ -111,20 +116,4 @@ export function colony(): Colony {
       return { seq: r.seq, at: r.at, reports: b.reports.length, proposals: b.proposals?.length ?? 0, ...(b.error && { error: b.error }) };
     }).reverse(),
   };
-}
-
-if (import.meta.main) {
-  const [cmd, arg] = process.argv.slice(2);
-  if (cmd === "adopt" || cmd === "reject") console.log(`${cmd}ed #${arg} (row #${decide(cmd, Number(arg))})`);
-  else if (cmd === "run") {
-    const { respond } = await import("./codex");
-    const { MODELS } = await import("./shared");
-    const n = await evolve(process.env.SHIRO_MODEL ?? MODELS[0].id, respond, { force: true });
-    console.log(n < 0 ? store.substrate(COLONY).findLast((r) => r.kind === "evolve")?.body : `${n} proposals`);
-  }
-  console.log(`${pending().length} pending type-gap reports (a run starts at ${THRESHOLD})`);
-  for (const r of open()) {
-    const p = r.body;
-    console.log(`\n#${r.seq} ${p.name}: ${p.purpose}\n  fields: ${Object.entries(p.fields).map(([k, v]) => `${k} (${v})`).join(", ")}\n  reader: ${p.obligation}\n  covers ${p.covers.length} reports: ${p.covers.map((n) => `#${n}`).join(" ")}\n  cost: ${p.cost.fields} fields, ${p.cost.bytes} bytes`);
-  }
 }

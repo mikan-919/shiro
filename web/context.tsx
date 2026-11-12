@@ -21,7 +21,7 @@ export function noteKind(text: string): Exclude<Kind, "all"> {
 const statusName = (s: string) => ({ waiting: "開始待ち", idle: "出番なし", running: "作業中", finished: "終了", stopped: "停止", error: "エラー" })[s] ?? s;
 
 /** A read-only view of the latest board, not an archive of all prior turns. */
-export function ContextPage({ board, running, title }: { board?: Board; running: boolean; title: string }) {
+export function ContextPage({ board, running, title, colonyRev = 0 }: { board?: Board; running: boolean; title: string; colonyRev?: number }) {
   const [filter, setFilter] = useState<Kind>("all");
   const [query, setQuery] = useState("");
   const tasks = board?.tasks ?? [];
@@ -86,7 +86,7 @@ export function ContextPage({ board, running, title }: { board?: Board; running:
             </li>
           ))}</ol> : <p className="context-empty">{notes.length ? "条件に一致するノートはありません。" : "まだ共有ノートはありません。公開されるとここに表示されます。"}</p>}
         </section>
-        <ColonySection running={running} />
+        <ColonySection running={running} rev={colonyRev} />
       </div>
     </div>
   );

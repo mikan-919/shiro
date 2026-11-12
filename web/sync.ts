@@ -55,6 +55,8 @@ export function useLive(say: (msg: string) => void) {
   const [contextPage, setContextPage] = useState(contextFromPath);
   const [conv, setConv] = useState<Conversation | null>(null);
   const [online, setOnline] = useState(true);
+  /** Bumped when the colony may have changed; the shared-context page reloads it. */
+  const [colonyRev, setColonyRev] = useState(0);
   const seq = useRef(0);
   const held = useRef<Push[] | null>(null);
   const cur = useRef(currentId);
@@ -114,6 +116,7 @@ export function useLive(say: (msg: string) => void) {
       const [s, list] = await Promise.all([api<ServerState>("/api/state"), api<ConvView[]>("/api/conversations")]);
       setSrv(s);
       setConvs(list);
+      setColonyRev((n) => n + 1);
       if (cur.current) await load(cur.current);
     } catch (e) {
       fail(e);
@@ -139,7 +142,7 @@ export function useLive(say: (msg: string) => void) {
     } else if (p.type === "auth") {
       setSrv((s) => (s ? { ...s, account: p.account } : s));
       if (p.error) say(p.error);
-    }
+    } else if (p.type === "colony") setColonyRev((n) => n + 1);
   };
 
   useEffect(() => {
@@ -186,6 +189,7 @@ export function useLive(say: (msg: string) => void) {
     conv,
     online,
     contextPage,
+    colonyRev,
     openContext: () => { if (currentId) open(currentId, undefined, true); },
     known: known.current,
     open,

@@ -701,3 +701,33 @@ test("the evolver proposes types after enough reports, replays them, and only an
   const { teamInstructions } = await import("./instructions");
   expect(teamInstructions("shiro-1", "{}", {}, [], store.types())).toContain("- handoff {work: what remains; why: why it is handed off}");
 });
+
+test("past turns are observed on request: one call per unobserved turn, stopping at the first failure", async () => {
+  const { unobserved, observing } = await import("./observer");
+  const { colony } = await import("./evolver");
+  for (const turn of ["past-1", "past-2"]) store.append({ conv: "past", turn, agent: "shiro-1", kind: "publish", body: { text: "a finding" } });
+  let calls = 0;
+  let fail = true;
+  const observer: typeof respond = async function* () {
+    calls++;
+    if (fail) throw new Error("no auth");
+    yield { type: "text", text: '{"gaps":[]}' };
+  };
+  const { agent, id, pushes } = setup(async function* () {}, observer);
+  const todo = unobserved().length;
+  expect(todo).toBeGreaterThanOrEqual(2);
+  agent.observePast();
+  expect(colony().busy.observing).toEqual({ done: 0, total: todo });
+  await until(() => !observing());
+  expect(calls).toBe(1); // The first failure stops the run.
+  expect(colony().observer.error).toBe("no auth");
+  fail = false;
+  agent.observePast();
+  await until(() => !observing());
+  expect(calls).toBe(1 + todo);
+  expect(unobserved()).toEqual([]);
+  expect(colony()).toMatchObject({ unobserved: 0, busy: { observing: null } });
+  expect(colony().observer.error).toBeUndefined();
+  expect(pushes.some((p) => p.type === "colony")).toBe(true);
+  agent.remove(id);
+});

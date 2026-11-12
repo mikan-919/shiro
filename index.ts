@@ -3,6 +3,7 @@ import page from "./web/index.html";
 import { account, login, logout } from "./auth";
 import { createAgent } from "./agent";
 import { colony, decide } from "./evolver";
+import { stopObserving } from "./observer";
 import { jevEnabled } from "./approve";
 import { isEffort, MODELS, type Push } from "./shared";
 
@@ -80,6 +81,14 @@ const server = Bun.serve({
         }
         return Response.json(colony());
       }),
+    },
+    // Both jobs run in the background; a "colony" push tells the page when to load the colony again.
+    "/api/colony/observe": {
+      POST: guard(() => (agent.observePast(), Response.json(colony()))),
+      DELETE: guard(() => (stopObserving(), Response.json(colony()))),
+    },
+    "/api/colony/evolve": {
+      POST: guard(() => (agent.evolveNow(), Response.json(colony()))),
     },
     "/api/conversations": {
       GET: guard(() => Response.json(agent.list())),

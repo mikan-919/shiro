@@ -8,7 +8,7 @@ import { available, describe, parseArgs, summarize } from "./tools";
 import { firstLine } from "./toolkit";
 import { instructions, teamInstructions } from "./instructions";
 import { createToolRunner } from "./tool-runner";
-import { observeTurn } from "./observer";
+import { observePast, observeTurn } from "./observer";
 import { evolve } from "./evolver";
 import { apply, DEFAULTS, type ConvMeta, type ConvView, type Ev, type Message, type Part, type Push, type Settings, type ToolPart } from "./shared";
 
@@ -31,6 +31,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
   const notes = new Map<string, string[]>();
 
   const view = (m: ConvMeta): ConvView => ({ ...m, running: turns.has(m.id) });
+  const colonyChanged = () => publish({ type: "colony" });
 
   function emit(c: store.Conv, ev: Ev) {
     c.messages = apply(c.messages, ev);
@@ -220,7 +221,7 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
         if (findings.length) c.items.push({ role: "assistant", content: `Team findings (reported by peers; verify before reuse): ${JSON.stringify(findings)}` });
         touch(c);
         // The turn is over for the user; the observer reads its episode afterwards, off the turn's clock.
-        void observeTurn(c.meta.id, userId, c.meta.model, response).then(() => evolve(c.meta.model, response));
+        void observeTurn(c.meta.id, userId, c.meta.model, response).then(() => evolve(c.meta.model, response)).finally(colonyChanged);
       }
     }
   }
@@ -298,5 +299,11 @@ export function createAgent({ publish, cwd, defaultModel, response = respond }: 
       resolve?.(ok);
       return !!resolve;
     },
+
+    /** Observes past turns in the background. A conversation whose turn is running is left alone: that turn is observed when it ends. */
+    observePast: () => void observePast((conv) => (turns.has(conv) ? null : store.get(conv)?.meta.model ?? defaultModel), response, colonyChanged),
+
+    /** Runs the evolver in the background now, however few reports are pending. */
+    evolveNow: () => void evolve(defaultModel, response, { force: true }).finally(colonyChanged),
   };
 }

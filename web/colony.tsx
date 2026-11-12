@@ -9,32 +9,40 @@ function Fields({ fields }: { fields: Record<string, string> }) {
   return <dl className="context-fields">{Object.entries(fields).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>;
 }
 
-/** Loads the colony on mount and again whenever a turn ends, since the observer and the evolver write after it. */
-export function ColonySection({ running }: { running: boolean }) {
+export type Job = "observe" | "stop" | "evolve";
+
+/** Loads the colony on mount, when a turn starts or ends, and whenever the server says it changed (`rev`): the observer and the evolver write after the turn. */
+export function ColonySection({ running, rev }: { running: boolean; rev: number }) {
   const [data, setData] = useState<Colony>();
   const [error, setError] = useState("");
   useEffect(() => {
-    if (running) return;
-    api<Colony>("/api/colony").then(setData, (e: Error) => setError(e.message));
-    // The evolver runs after the observer, a few seconds after the turn: look once more.
-    const t = setTimeout(() => api<Colony>("/api/colony").then(setData, () => {}), 15000);
-    return () => clearTimeout(t);
-  }, [running]);
-  const decide = (action: "adopt" | "reject", target: number) =>
-    api<Colony>("/api/colony/decide", { action, target }).then((d) => { setData(d); setError(""); }, (e: Error) => setError(e.message));
-  return <ColonyView data={data} error={error} decide={decide} />;
+    let live = true;
+    api<Colony>("/api/colony").then((d) => live && setData(d), (e: Error) => live && setError(e.message));
+    return () => { live = false; };
+  }, [running, rev]);
+  const call = (path: string, body: unknown = {}, method?: string) =>
+    api<Colony>(path, body, method).then((d) => { setData(d); setError(""); }, (e: Error) => setError(e.message));
+  const decide = (action: "adopt" | "reject", target: number) => call("/api/colony/decide", { action, target });
+  const run = (job: Job) => (job === "stop" ? call("/api/colony/observe", undefined, "DELETE") : call(`/api/colony/${job}`));
+  return <ColonyView data={data} error={error} decide={decide} run={run} />;
 }
 
-export function ColonyView({ data, error, decide }: { data?: Colony; error?: string; decide: (action: "adopt" | "reject", target: number) => void }) {
+export function ColonyView({ data, error, decide, run }: { data?: Colony; error?: string; decide: (action: "adopt" | "reject", target: number) => void; run: (job: Job) => void }) {
   const [confirm, setConfirm] = useState<string>();
   if (!data) return <section aria-labelledby="context-colony"><h2 id="context-colony" className="context-colony-title">スキーマの進化</h2><p className="context-empty">{error || "読み込み中です。"}</p></section>;
   const reports = new Map(data.reports.map((r) => [r.seq, r]));
   const last = data.runs[0];
   const live = data.settled.filter((s) => !s.retracted);
+  const { observing, evolving } = data.busy;
+  const sum = (f: (t: Colony["turns"][number]) => number) => data.turns.reduce((n, t) => n + f(t), 0);
   return (
     <section aria-labelledby="context-colony" className="context-colony">
       <div className="context-section-head"><h2 id="context-colony" className="context-colony-title">スキーマの進化</h2><span>基質スキーマ v{data.version}・全会話</span></div>
       <p className="context-description">ここから下は会話をまたぐ記録です。未読の type-gap report が {data.threshold} 件たまると、ターンの後に型の提案と評価が走ります。現在 {data.pending} / {data.threshold} 件です。{last && `前回の実行は ${when(last.at)} で、report ${last.reports} 件から提案 ${last.proposals} 件${last.error ? `（失敗: ${last.error}）` : ""}。`}</p>
+      <div className="context-decide">
+        <button type="button" disabled={evolving || !data.pending} onClick={() => run("evolve")}>{evolving ? "提案と評価を実行中…" : "今すぐ提案と評価を実行"}</button>
+        <span>件数を待たずに、未読の report でモデルを2回呼びます。</span>
+      </div>
       {error && <p className="context-empty" role="alert">{error}</p>}
 
       <h3 className="context-subhead">型の提案 <span>{data.proposals.length} 件が未決</span></h3>
@@ -73,6 +81,16 @@ export function ColonyView({ data, error, decide }: { data?: Colony; error?: str
       ))}</ol> : <p className="context-empty">v3 以降に採用された型はまだありません。v0〜v2 の型（ノート、タスク、type-gap report、定着事項）は常に使えます。</p>}
 
       <h3 className="context-subhead">type-gap report <span>{data.reports.length} 件・新しい順・自己申告 {data.reports.filter((r) => r.source === "self").length}・観察者 {data.reports.filter((r) => r.source === "observer").length}</span></h3>
+      <div className="context-decide">
+        {observing ? <>
+          <span role="status">過去のターンを観察中です（{observing.done} / {observing.total}）。</span>
+          <button type="button" onClick={() => run("stop")}>中止する</button>
+        </> : <>
+          <button type="button" disabled={!data.unobserved} onClick={() => run("observe")}>未観察のターンを観察する</button>
+          <span>未観察 {data.unobserved} ターン。1ターンにつきモデルを1回呼び、失敗した時点で止まります。</span>
+        </>}
+      </div>
+      {data.observer.error && <p className="context-empty" role="alert">直近の観察は失敗しました: {data.observer.error}</p>}
       {data.reports.length ? <details className="context-fold"><summary>一覧を開く</summary><ol className="context-notes">{data.reports.map((r) => (
         <li className="context-card kind-type-gap" key={r.seq}>
           <div className="context-card-head"><span className="context-tag">#{r.seq} {SOURCE[r.source] ?? r.source}</span><span>{when(r.at)}・{r.conv.slice(0, 8)}</span></div>
@@ -92,6 +110,20 @@ export function ColonyView({ data, error, decide }: { data?: Colony; error?: str
           <p>{s.text}</p>
         </li>
       ))}</ol> : <p className="context-empty">まだ定着事項はありません。</p>}
+
+      <h3 className="context-subhead">ターンの記録 <span>{data.turns.length} ターン・参加者の起動 {sum((t) => t.peers)} 回・複数参加 {data.turns.filter((t) => t.peers > 1).length} ターン・failure {sum((t) => t.failure)} 件・観察 {data.observer.ran} 回（失敗 {data.observer.failed}）</span></h3>
+      {data.turns.length ? <details className="context-fold"><summary>一覧を開く</summary><div className="context-table"><table>
+        <thead><tr><th>時刻</th><th>会話</th><th>参加者</th><th>タスク追加</th><th>ツール</th><th>type-gap</th><th>failure</th></tr></thead>
+        <tbody>{data.turns.map((t) => <tr key={t.turn}><td>{when(t.at)}</td><td>{t.conv.slice(0, 8)}</td><td>{t.peers}</td><td>{t.add}</td><td>{t.tool}</td><td>{t.gap}</td><td>{t.failure}</td></tr>)}</tbody>
+      </table></div></details> : <p className="context-empty">まだターンの記録はありません。</p>}
+
+      <h3 className="context-subhead">ラベル付きノート <span>{data.labelled.length} 件・[failure] と v0 の [type-gap]・全会話</span></h3>
+      {data.labelled.length ? <details className="context-fold"><summary>一覧を開く</summary><ol className="context-notes">{data.labelled.map((n) => (
+        <li className="context-card" key={n.seq}>
+          <div className="context-card-head"><span className="context-tag">#{n.seq} {n.agent}</span><span>{when(n.at)}</span></div>
+          <p>{n.text}</p>
+        </li>
+      ))}</ol></details> : <p className="context-empty">ラベル付きのノートはありません。</p>}
     </section>
   );
 }

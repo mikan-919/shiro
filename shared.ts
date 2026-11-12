@@ -114,7 +114,9 @@ export type Push =
   | { type: "ev"; conv: string; seq: number; ev: Ev }
   | { type: "meta"; meta: ConvView }
   | { type: "deleted"; id: string }
-  | { type: "auth"; account: Account | null; error?: string };
+  | { type: "auth"; account: Account | null; error?: string }
+  /** The observer or the evolver wrote something, or moved on: the shared-context page loads the colony again. */
+  | { type: "colony" };
 
 /** Pure: returns a new array, leaving the input untouched (React state). */
 export function apply(msgs: Message[], ev: Ev): Message[] {
@@ -185,6 +187,15 @@ export const assistantText = (m: AssistantMessage) => m.parts.flatMap((p) => (p.
 /** The colony-wide part of the substrate the shared-context page shows: it spans every conversation. */
 export type Colony = {
   version: number; threshold: number; pending: number;
+  /** Turns that hold gists the observer has not read, and what is running in the background now. */
+  unobserved: number;
+  busy: { observing: { done: number; total: number } | null; evolving: boolean };
+  /** `error` is set while the latest observation is a failed one. */
+  observer: { ran: number; failed: number; error?: string };
+  /** One row per turn, newest first. `gap` counts type-gap reports and v0 notes labelled [type-gap]. */
+  turns: { turn: string; conv: string; at: number; peers: number; add: number; tool: number; gap: number; failure: number }[];
+  /** Notes labelled [failure] or [type-gap], newest first. */
+  labelled: { seq: number; at: number; agent: string; text: string }[];
   types: { seq: number; at: number; name: string; purpose: string; fields: Record<string, string>; obligation: string }[];
   proposals: { seq: number; at: number; name: string; purpose: string; fields: Record<string, string>; obligation: string; covers: number[]; cost: { fields: number; bytes: number } }[];
   reports: { seq: number; at: number; conv: string; source: string; wanted: string; distortion: string; cost: string; evidence: string[] }[];

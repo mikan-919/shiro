@@ -1,5 +1,5 @@
 // The observer: after a turn, reads its episode once and appends type-gap reports. It commands no one and claims no task.
-// Run `bun observer.ts` to observe past turns that have not been observed yet (one model call per turn that holds a gist).
+// The shared-context page can also start it on past turns that have not been observed yet (observePast).
 import * as store from "./store";
 import type { respond } from "./codex";
 
@@ -45,10 +45,22 @@ export function parseGaps(text: string, rows: store.SubstrateRow[]): Gap[] {
   });
 }
 
+/** Turns being read right now, so the turn's own observation and a run over past turns never read one twice. */
+const reading = new Set<string>();
+const unread = (rows: store.SubstrateRow[]) => rows.some(store.isGist) && !rows.some((r) => r.kind === "observe" && !(r.body as { error?: string }).error);
+
+/** Turns that hold a gist and have no successful observation, oldest first. */
+export function unobserved() {
+  const turns = new Map<string, store.SubstrateRow[]>();
+  for (const r of store.substrate()) { const rows = turns.get(r.turn); if (rows) rows.push(r); else turns.set(r.turn, [r]); }
+  return [...turns].filter(([turn, rows]) => !reading.has(turn) && unread(rows)).map(([turn, rows]) => ({ turn, conv: rows[0]!.conv }));
+}
+
 /** At most one model call per turn, and none for a turn without gists or one already observed. Returns the number of reports, or -1 when the call or its answer failed. */
 export async function observeTurn(conv: string, turn: string, model: string, response: typeof respond, signal = new AbortController().signal): Promise<number> {
   const rows = store.substrate(conv).filter((r) => r.turn === turn);
-  if (!rows.some(store.isGist) || rows.some((r) => r.kind === "observe" && !(r.body as { error?: string }).error)) return 0;
+  if (reading.has(turn) || !unread(rows)) return 0;
+  reading.add(turn);
   try {
     let text = "";
     const events = response({ model, effort: "low", instructions: PROMPT(), input: [{ role: "user", content: render(rows) }], tools: [], session: `${conv}:${OBSERVER}`, signal });
@@ -58,21 +70,32 @@ export async function observeTurn(conv: string, turn: string, model: string, res
     store.append({ conv, turn, agent: OBSERVER, kind: "observe", body: { gaps: gaps.length } });
     return gaps.length;
   } catch (e) {
-    // Recorded so failures can be counted; `bun observer.ts` retries a turn whose observation failed.
-    store.append({ conv, turn, agent: OBSERVER, kind: "observe", body: { error: (e as Error).message } });
+    // Recorded so failures can be counted; observePast retries a turn whose observation failed. A stop by the user is not a failure.
+    if (!signal.aborted) store.append({ conv, turn, agent: OBSERVER, kind: "observe", body: { error: (e as Error).message } });
     return -1;
-  }
+  } finally { reading.delete(turn); }
 }
 
-if (import.meta.main) {
-  const { respond } = await import("./codex");
-  const { MODELS } = await import("./shared");
-  const turns = new Map<string, string>();
-  for (const r of store.substrate()) turns.set(r.turn, r.conv);
-  for (const [turn, conv] of turns) {
-    const n = await observeTurn(conv, turn, store.get(conv)?.meta.model ?? process.env.SHIRO_MODEL ?? MODELS[0].id, respond);
-    console.log(`${conv.slice(0, 8)} ${turn.slice(0, 8)}: ${n < 0 ? "failed" : `${n} type-gap`}`);
-    // One failure is likely to repeat (model, auth, answer format): stop instead of spending a call per turn.
-    if (n < 0) { console.log(store.substrate(conv).findLast((r) => r.kind === "observe")?.body); break; }
-  }
+let past: { done: number; total: number; ctl: AbortController } | null = null;
+/** How far the run over past turns is, or null when none is running. */
+export const observing = () => past && { done: past.done, total: past.total };
+export const stopObserving = () => past?.ctl.abort();
+
+/**
+ * Observes every unobserved turn, one model call each, and calls `tick` as it advances. `model` returns null for a
+ * conversation to leave alone (its turn is still running, so its episode is incomplete).
+ * One failure is likely to repeat (model, auth, answer format): it stops there instead of spending a call per turn.
+ */
+export async function observePast(model: (conv: string) => string | null, response: typeof respond, tick: () => void = () => {}) {
+  if (past) return;
+  const todo = unobserved();
+  const run = past = { done: 0, total: todo.length, ctl: new AbortController() };
+  try {
+    for (const { conv, turn } of todo) {
+      const m = model(conv);
+      if (m !== null && (await observeTurn(conv, turn, m, response, run.ctl.signal)) < 0) break;
+      run.done++;
+      tick();
+    }
+  } finally { past = null; tick(); }
 }
