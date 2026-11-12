@@ -61,18 +61,23 @@ test("four participants show distinct identities and startup waiting status", ()
   expect(html).toContain("integration notes");
 });
 
-test("the colony section shows proposals with their replay and cost, adopted types, reports and settled facts", async () => {
-  const { ColonyView } = await import("./colony");
+test("the schema and records views show proposals with their replay and cost, the jobs, totals, reports and settled facts", async () => {
+  const { SchemaView, RecordsView } = await import("./colony");
   const board: Board = { tasks: [], notes: [], gists: [{ agent: "shiro-2", type: "handoff", fields: { work: "run the suite" } }] };
-  expect(renderToStaticMarkup(<ContextPage board={board} running title="t" />)).toContain("run the suite");
-  const html = renderToStaticMarkup(<ColonyView decide={() => {}} run={() => {}} conv="abcdefgh1234" data={{
+  const page = renderToStaticMarkup(<ContextPage board={board} running title="t" />);
+  for (const s of ["run the suite", "ボード", "スキーマ", "記録"]) expect(page).toContain(s);
+  const props = { decide: () => {}, run: () => {}, data: {
     version: 3, threshold: 10, pending: 4, unobserved: 2, busy: { observing: null, evolving: true }, observeError: "no auth",
     turns: [{ turn: "t1", conv: "abcdefgh1234", at: 0, peers: 2, add: 3, tool: 5, gap: 1, failure: 0, observed: 5, observeFailed: 1 }],
-    labelled: [{ seq: 4, at: 0, conv: "abcdefgh1234", agent: "shiro-2", text: "[failure] exit 1" }], runs: [{ seq: 30, at: 0, reports: 12, proposals: 1 }],
+    labelled: [{ seq: 4, at: 0, conv: "abcdefgh1234", agent: "shiro-2", text: "[failure] exit 1" }],
+    runs: [{ seq: 30, at: 0, reports: 12, proposals: 1 }],
     proposals: [{ seq: 29, at: 0, name: "handoff", purpose: "Remaining work offered to peers.", fields: { work: "what remains" }, obligation: "Claim it or leave it.", covers: [7], cost: { fields: 1, bytes: 120 } }],
     types: [],
     reports: [{ seq: 7, at: 0, conv: "abcdefgh1234", source: "observer", wanted: "hand the suite to a peer", distortion: "note text", cost: "unmeasured", evidence: ["#3"] }],
     settled: [{ seq: 5, at: 0, conv: "abcdefgh1234", kind: "environment", text: "python3 is not installed", cwd: null, retracted: true }],
-  }} />);
-  for (const s of ["4 / 10", "#29 handoff", "対応する report 1 件", "欄 1・120 バイト", "#7 hand the suite to a peer", "観察者", "未計測", "打ち消し済み", "採用か却下を決める", "提案と評価を実行中…", "未観察 2 ターン", "no auth", "参加者の起動 2 回", "観察 6 回（失敗 1）", "[failure] exit 1", "この会話"]) expect(html).toContain(s);
+  } };
+  const schema = renderToStaticMarkup(<SchemaView {...props} />);
+  for (const s of ["4 / 10", "#29 handoff", "対応する report 1 件・欄 1・120 バイト", "#7 hand the suite to a peer", "採用か却下を決める", "提案と評価を実行中…"]) expect(schema).toContain(s);
+  const records = renderToStaticMarkup(<RecordsView {...props} conv="abcdefgh1234" />);
+  for (const s of ["観察者", "未計測", "打ち消し済み", "未観察 2 ターン", "no auth", "<dt>参加者の起動</dt><dd>2</dd>", "失敗 1", "[failure] exit 1", "この会話"]) expect(records).toContain(s);
 });

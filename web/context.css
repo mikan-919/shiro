@@ -1,19 +1,40 @@
 .context-page { flex: 1; min-height: 0; overflow-y: auto; }
-.context-column { max-width: 58rem; margin: 0 auto; padding: 24px 24px 48px; display: flex; flex-direction: column; gap: 22px; transition: opacity 180ms var(--ease-out); }
+.context-column { max-width: 58rem; margin: 0 auto; padding: 24px 24px 48px; display: flex; flex-direction: column; gap: 20px; transition: opacity 180ms var(--ease-out); }
 @starting-style { .context-column { opacity: 0; } }
 .context-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .context-heading h1 { margin: 0; font-size: 24px; font-weight: 700; }
 .context-eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .context-heading-actions { display: flex; align-items: center; gap: 8px; flex: none; }
-.context-description { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.8; }
 .context-live { color: var(--muted); font-size: 12px; }
 .context-live.active { color: var(--pine); }
+
+/* The page's three views, and the scope switch in the records: the segmented control from the composer. */
+.context-seg.segmented { margin: 0; }
+.context-seg.segmented button { padding: 7px 16px; font-size: 13px; white-space: nowrap; }
+.context-tabs { align-self: flex-start; width: min(100%, 22rem); }
+.context-badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: var(--accent-bg); color: var(--accent-fg); font-size: 11px; font-weight: 500; line-height: 18px; }
+.context-panel { display: flex; flex-direction: column; gap: 22px; transition: opacity 180ms var(--ease-out); }
+@starting-style { .context-panel { opacity: 0; } }
+
+.context-description { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.context-empty { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.context-alert { margin: 0; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--rust) 40%, transparent); border-radius: 12px; color: var(--rust); font-size: 13px; overflow-wrap: anywhere; }
 .context-members { display: flex; flex-wrap: wrap; gap: 10px; }
 .context-member { display: inline-flex; align-items: center; gap: 12px; padding: 8px 12px 8px 4px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; }
 .context-search { width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .context-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .context-section-head h2 { margin: 0; font-size: 16px; font-weight: 700; }
 .context-section-head > span { color: var(--muted); font-size: 12px; }
+
+/* A status on the left and the one action it leads to on the right. */
+.context-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.context-bar p { margin: 0; color: var(--muted); font-size: 13px; }
+.context-bar-action { display: flex; align-items: center; gap: 10px; margin-left: auto; color: var(--muted); font-size: 12px; }
+.context-bar > button, .context-bar-action button, .context-decide button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text); }
+.context-bar button:disabled { opacity: .45; }
+.context-decide { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+.context-decide button.primary { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; }
+
 .context-tasks, .context-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .context-tasks { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
 .context-card { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out); }
@@ -22,48 +43,59 @@
 .context-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .context-card-head .sender { padding-left: 0; }
 .context-card p { margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; }
+.context-card .context-obligation { color: var(--muted); font-size: 13px; }
+.context-card.retracted { opacity: .55; }
+.context-card.retracted p { text-decoration: line-through; }
 .context-tag { border-radius: 5px; padding: 2px 7px; background: var(--bg); color: var(--muted); font-size: 11px; }
 .context-tag.done { color: var(--pine); }
 .context-result { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
 .context-result > span, .context-task-id { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .context-result p { margin-top: 4px; }
 .context-task-id { display: block; margin-top: 12px; }
-.context-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.context-filters button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, var(--press); }
-.context-filters button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; }
-.context-filters button span { opacity: .7; }
-.context-empty { margin: 12px 0; padding: 20px; color: var(--muted); background: var(--surface); border-radius: 12px; font-size: 13px; }
 .kind-failure { border-left: 3px solid var(--rust); }
 .kind-type-gap { border-left: 3px solid var(--ochre); }
-@media (max-width: 600px) { .context-column { padding: 18px 14px 32px; gap: 18px; } .context-heading { align-items: flex-start; } .context-heading-actions { flex-direction: column-reverse; align-items: flex-end; } }
 .kind-gist { border-left: 3px solid var(--pine); }
 .kind-proposal { border-left: 3px solid var(--accent-bg); }
 .context-fields { margin: 12px 0 0; display: grid; gap: 8px; font-size: 14px; line-height: 1.7; }
 .context-fields > div { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 12px; }
 .context-fields dt { color: var(--muted); font-size: 12px; padding-top: 2px; overflow-wrap: anywhere; }
 .context-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.context-colony { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 22px; }
-.context-colony .context-section-head { margin-bottom: 0; }
-.context-colony-title { margin: 0; font-size: 18px; font-weight: 700; }
-.context-subhead { margin: 10px 0 0; font-size: 15px; font-weight: 700; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.context-subhead span { color: var(--muted); font-size: 12px; font-weight: 400; }
-.context-card .context-obligation { color: var(--muted); font-size: 13px; }
-.context-metrics { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; color: var(--muted); font-size: 12px; }
-.context-covers, .context-fold { margin-top: 10px; font-size: 13px; }
-.context-covers summary, .context-fold > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
-.context-fold > .context-notes { margin-top: 10px; }
+.context-covers { margin-top: 12px; font-size: 13px; }
+.context-covers summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .context-covers ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.7; overflow-wrap: anywhere; }
-.context-decide { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--muted); }
-.context-decide button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text); }
-.context-decide button.primary { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; }
-.context-decide button:disabled { opacity: .45; }
-.context-scope { align-items: center; margin: 10px 0 0; }
-.context-scope small { color: var(--muted); font-size: 12px; }
-.context-table { overflow-x: auto; margin-top: 10px; }
+
+.context-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.context-filters button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, var(--press); }
+.context-filters button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; }
+.context-filters button span { opacity: .7; }
+.context-filters + .context-description { margin-bottom: 12px; }
+
+/* The records: totals first, then each list closed behind its heading and count. */
+.context-stats { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: 8px; }
+.context-stats > div { padding: 10px 14px; border-radius: 12px; background: var(--surface); }
+.context-stats dt { color: var(--muted); font-size: 11.5px; }
+.context-stats dd { margin: 2px 0 0; display: flex; align-items: baseline; gap: 8px; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.context-stats dd small { color: var(--muted); font-size: 11.5px; font-weight: 400; }
+.context-folds { border-bottom: 1px solid var(--line); }
+.context-fold { border-top: 1px solid var(--line); }
+.context-fold > summary { display: flex; align-items: center; gap: 12px; padding: 14px 2px; cursor: pointer; list-style: none; font-size: 15px; font-weight: 700; }
+.context-fold > summary::-webkit-details-marker { display: none; }
+.context-fold > summary::before { content: ""; flex: none; width: 6px; height: 6px; margin: 0 2px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; rotate: -45deg; transition: rotate 200ms var(--ease-out); }
+.context-fold[open] > summary::before { rotate: 45deg; }
+.context-fold > summary small { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; }
+.context-fold > :not(summary) { margin-bottom: 18px; }
+.context-table { overflow-x: auto; }
 .context-table table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .context-table :is(th, td) { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); }
 .context-table th { color: var(--muted); font-weight: 400; }
 .context-table :is(th, td):nth-child(-n+2) { text-align: left; }
-.context-card.retracted { opacity: .55; }
-.context-card.retracted p { text-decoration: line-through; }
-@media (max-width: 600px) { .context-fields > div { grid-template-columns: 1fr; gap: 2px; } }
+.context-table tbody tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 600px) {
+  .context-column { padding: 18px 14px 32px; gap: 16px; }
+  .context-heading { align-items: flex-start; }
+  .context-heading-actions { flex-direction: column-reverse; align-items: flex-end; }
+  .context-fields > div { grid-template-columns: 1fr; gap: 2px; }
+  .context-tabs { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .context-fold > summary::before { transition: none; } }
