@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, 
 import { EFFORTS, MODELS } from "../shared";
 import type { Settings } from "./sync";
 import { Icon, IconButton, usePopover } from "./ui";
+import { cssEase, reducedMotion, useFlip } from "./motion";
 import "./composer.css";
 
 const MAX_IMAGES = 8;
@@ -99,6 +100,9 @@ export function SettingsPicker({ settings, jev, auto, full, onChange }: { settin
   );
 }
 
+// ponytail: an image's length and tail stand for it; give attachments ids if two different images ever collide.
+const tag = (src: string) => `${src.length}:${src.slice(-32)}`;
+
 export type ComposerHandle = { addFiles: (files: File[]) => void; focus: () => void };
 
 export const Composer = forwardRef<ComposerHandle, {
@@ -113,16 +117,25 @@ export const Composer = forwardRef<ComposerHandle, {
 
   const addFiles = useCallback(async (files: File[]) => {
     const urls = await Promise.all(files.slice(0, MAX_IMAGES).map(toDataUrl));
-    setImages((cur) => [...cur, ...urls].slice(0, MAX_IMAGES));
+    setImages((cur) => [...new Set([...cur, ...urls])].slice(0, MAX_IMAGES));
   }, []);
   useImperativeHandle(handle, () => ({ addFiles, focus: () => ta.current?.focus() }), [addFiles]);
 
+  // The box takes the height of its text, and grows or shrinks to it rather than jumping a line at a time.
   useLayoutEffect(() => {
     const el = ta.current;
     if (!el) return;
+    const was = el.offsetHeight;
+    // A resize still in flight would be measured instead of the text; the next one starts from where it had got to.
+    for (const a of el.getAnimations()) a.cancel();
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+    const now = el.offsetHeight;
+    if (was && was !== now && !reducedMotion())
+      el.animate([{ height: `${was}px`, overflow: "hidden" }, { height: `${now}px`, overflow: "hidden" }], { duration: 160, easing: cssEase("--ease-out") });
   }, [value]);
+  // Taking an image off slides the others into its place.
+  const tray = useFlip<HTMLDivElement>([images]);
 
   const canSend = !disabled && !sending && (value.trim() !== "" || images.length > 0);
   const submit = async () => {
@@ -148,9 +161,9 @@ export const Composer = forwardRef<ComposerHandle, {
       onClick={(e) => e.target === e.currentTarget && ta.current?.focus()}
     >
       {images.length > 0 && (
-        <div className="attachments">
+        <div className="attachments" ref={tray}>
           {images.map((src, i) => (
-            <div className="attach" key={i}>
+            <div className="attach" key={tag(src)} data-flip={tag(src)}>
               <img src={src} alt="" />
               <button type="button" aria-label="画像を外す" disabled={sending} onClick={() => setImages(images.filter((_, j) => j !== i))}>
                 <Icon name="x" size={12} />

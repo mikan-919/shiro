@@ -1,6 +1,8 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { Colony } from "../shared";
 import { api } from "./sync";
+import { Num } from "./ui";
+import { useFlip } from "./motion";
 
 const when = (at: number) => new Date(at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 const SOURCE: Record<string, string> = { self: "自己申告", observer: "観察者" };
@@ -31,29 +33,31 @@ export function useColony(running: boolean, rev: number): ColonyProps {
 }
 
 /** A section that opens in place. Its heading and count are the whole closed state. */
-function Fold({ title, count, children }: { title: string; count: string; children: ReactNode }) {
+function Fold({ title, count, children }: { title: string; count: ReactNode; children: ReactNode }) {
   return <details className="context-fold"><summary><span>{title}</span><small>{count}</small></summary>{children}</details>;
 }
 
 /** The schema's growth across every conversation: proposals waiting for the user, and the types adopted so far. */
 export function SchemaView({ data, error, decide, run }: ColonyProps) {
   const [confirm, setConfirm] = useState<number>();
+  // Deciding a proposal takes its card away; the rest close the gap.
+  const flip = useFlip<HTMLDivElement>([data]);
   if (!data) return <p className="context-empty">{error || "読み込み中です。"}</p>;
   const reports = new Map(data.reports.map((r) => [r.seq, r]));
   const last = data.runs[0];
   return (
-    <>
+    <div className="context-stack" ref={flip}>
       <div className="context-bar">
-        <p>未読の type-gap report {data.pending} / {data.threshold} 件{last && `・前回 ${when(last.at)}（report ${last.reports} 件から提案 ${last.proposals} 件）`}</p>
+        <p>未読の type-gap report <Num value={data.pending} /> / {data.threshold} 件{last && `・前回 ${when(last.at)}（report ${last.reports} 件から提案 ${last.proposals} 件）`}</p>
         <button type="button" disabled={data.busy.evolving || !data.pending} title="件数がたまるのを待たずに、未読の report でモデルを2回呼びます" onClick={() => run("evolve")}>{data.busy.evolving ? "提案と評価を実行中…" : "今すぐ提案と評価"}</button>
       </div>
       {error && <p className="context-alert" role="alert">{error}</p>}
       {last?.error && <p className="context-alert" role="alert">前回の提案と評価は失敗しました: {last.error}</p>}
 
       <section aria-labelledby="context-proposals">
-        <div className="context-section-head"><h2 id="context-proposals">型の提案</h2><span>{data.proposals.length} 件が未決</span></div>
+        <div className="context-section-head"><h2 id="context-proposals">型の提案</h2><span><Num value={data.proposals.length} /> 件が未決</span></div>
         {data.proposals.length ? <ol className="context-notes">{data.proposals.map((p) => (
-          <li className="context-card kind-proposal" key={p.seq}>
+          <li className="context-card kind-proposal" key={p.seq} data-flip={`proposal:${p.seq}`}>
             <div className="context-card-head"><span className="context-tag">#{p.seq} {p.name}</span><span>{when(p.at)}</span></div>
             <p>{p.purpose}</p>
             <Fields fields={p.fields} />
@@ -74,9 +78,9 @@ export function SchemaView({ data, error, decide, run }: ColonyProps) {
       </section>
 
       <section aria-labelledby="context-types">
-        <div className="context-section-head"><h2 id="context-types">採用済みの型</h2><span>{data.types.length} 件</span></div>
+        <div className="context-section-head" data-flip="head:types"><h2 id="context-types">採用済みの型</h2><span><Num value={data.types.length} /> 件</span></div>
         {data.types.length ? <ol className="context-notes">{data.types.map((t) => (
-          <li className="context-card kind-gist" key={t.seq}>
+          <li className="context-card kind-gist" key={t.seq} data-flip={`type:${t.seq}`}>
             <div className="context-card-head"><span className="context-tag">{t.name}</span><span>#{t.seq}</span></div>
             <p>{t.purpose}</p>
             <Fields fields={t.fields} />
@@ -84,7 +88,7 @@ export function SchemaView({ data, error, decide, run }: ColonyProps) {
           </li>
         ))}</ol> : <p className="context-empty">まだありません。ノート、タスク、type-gap report、定着事項は常に使えます。</p>}
       </section>
-    </>
+    </div>
   );
 }
 
@@ -108,10 +112,10 @@ export function RecordsView({ data, error, run, conv }: ColonyProps & { conv?: s
           <button type="button" role="radio" aria-checked={only} className={only ? "on" : ""} onClick={() => setOnly(true)}>この会話</button>
         </div> : <span />}
         {observing ? <div className="context-bar-action">
-          <span role="status">観察中 {observing.done} / {observing.total}</span>
+          <span role="status">観察中 <Num value={observing.done} /> / {observing.total}</span>
           <button type="button" onClick={() => run("stop")}>中止する</button>
         </div> : <div className="context-bar-action">
-          <span>未観察 {data.unobserved} ターン</span>
+          <span>未観察 <Num value={data.unobserved} /> ターン</span>
           <button type="button" disabled={!data.unobserved} title="観察者が1ターンにつきモデルを1回呼び、type-gap を探します。失敗した時点で止まります" onClick={() => run("observe")}>観察する</button>
         </div>}
       </div>
@@ -119,15 +123,15 @@ export function RecordsView({ data, error, run, conv }: ColonyProps & { conv?: s
       {data.observeError && <p className="context-alert" role="alert">直近の観察は失敗しました: {data.observeError}</p>}
 
       <dl className="context-stats">
-        <div><dt>ターン</dt><dd>{turns.length}</dd></div>
-        <div><dt>参加者の起動</dt><dd>{sum((t) => t.peers)}</dd></div>
-        <div><dt>複数参加のターン</dt><dd>{turns.filter((t) => t.peers > 1).length}</dd></div>
-        <div><dt>failure</dt><dd>{sum((t) => t.failure)}</dd></div>
-        <div><dt>観察</dt><dd>{sum((t) => t.observed + t.observeFailed)}<small>失敗 {sum((t) => t.observeFailed)}</small></dd></div>
+        <div><dt>ターン</dt><dd><Num value={turns.length} from={0} /></dd></div>
+        <div><dt>参加者の起動</dt><dd><Num value={sum((t) => t.peers)} from={0} /></dd></div>
+        <div><dt>複数参加のターン</dt><dd><Num value={turns.filter((t) => t.peers > 1).length} from={0} /></dd></div>
+        <div><dt>failure</dt><dd><Num value={sum((t) => t.failure)} from={0} /></dd></div>
+        <div><dt>観察</dt><dd><Num value={sum((t) => t.observed + t.observeFailed)} from={0} /><small>失敗 <Num value={sum((t) => t.observeFailed)} from={0} /></small></dd></div>
       </dl>
 
       <div className="context-folds">
-        <Fold title="type-gap report" count={`${gaps.length} 件`}>
+        <Fold title="type-gap report" count={<><Num value={gaps.length} /> 件</>}>
           {gaps.length ? <ol className="context-notes">{gaps.map((r) => (
             <li className="context-card kind-type-gap" key={r.seq}>
               <div className="context-card-head"><span className="context-tag">#{r.seq} {SOURCE[r.source] ?? r.source}</span><span>{when(r.at)}・{r.conv.slice(0, 8)}</span></div>
@@ -140,7 +144,7 @@ export function RecordsView({ data, error, run, conv }: ColonyProps & { conv?: s
             </li>
           ))}</ol> : <p className="context-empty">まだありません。</p>}
         </Fold>
-        <Fold title="長期共有文脈" count={`有効 ${settled.filter((s) => !s.retracted).length} 件`}>
+        <Fold title="長期共有文脈" count={<>有効 <Num value={settled.filter((s) => !s.retracted).length} /> 件</>}>
           {settled.length ? <ol className="context-notes">{settled.map((s) => (
             <li className={`context-card ${s.retracted ? "retracted" : ""}`} key={s.seq}>
               <div className="context-card-head"><span className="context-tag">#{s.seq} {s.kind === "policy" ? "方針" : "環境"}{s.retracted ? "・打ち消し済み" : ""}</span><span>{s.cwd ?? "全ディレクトリ"}</span></div>
@@ -148,13 +152,13 @@ export function RecordsView({ data, error, run, conv }: ColonyProps & { conv?: s
             </li>
           ))}</ol> : <p className="context-empty">まだ定着事項はありません。</p>}
         </Fold>
-        <Fold title="ターンの記録" count={`${turns.length} ターン`}>
+        <Fold title="ターンの記録" count={<><Num value={turns.length} /> ターン</>}>
           {turns.length ? <div className="context-table"><table>
             <thead><tr><th>時刻</th><th>会話</th><th>参加者</th><th>タスク追加</th><th>ツール</th><th>type-gap</th><th>failure</th><th>観察</th></tr></thead>
             <tbody>{turns.map((t) => <tr key={t.turn}><td>{when(t.at)}</td><td>{t.conv.slice(0, 8)}</td><td>{t.peers}</td><td>{t.add}</td><td>{t.tool}</td><td>{t.gap}</td><td>{t.failure}</td><td>{t.observed ? "済" : t.observeFailed ? "失敗" : "—"}</td></tr>)}</tbody>
           </table></div> : <p className="context-empty">まだありません。</p>}
         </Fold>
-        <Fold title="ラベル付きノート" count={`${labelled.length} 件`}>
+        <Fold title="ラベル付きノート" count={<><Num value={labelled.length} /> 件</>}>
           {labelled.length ? <ol className="context-notes">{labelled.map((n) => (
             <li className="context-card" key={n.seq}>
               <div className="context-card-head"><span className="context-tag">#{n.seq} {n.agent}</span><span>{when(n.at)}・{n.conv.slice(0, 8)}</span></div>

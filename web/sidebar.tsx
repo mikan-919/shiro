@@ -1,8 +1,8 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ConvView } from "../shared";
 import { useStored, type ServerState } from "./sync";
 import { Icon, IconButton, usePopover } from "./ui";
-import { cssEase, reducedMotion } from "./motion";
+import { reducedMotion, useFlip, usePill } from "./motion";
 import "./sidebar.css";
 
 function groupLabel(t: number) {
@@ -104,31 +104,6 @@ function ThemeSwitch() {
   );
 }
 
-/** FLIP: when the list changes (a conversation jumps to the top, a filter), each row slides from where it was. */
-function useFlip(list: unknown) {
-  const ref = useRef<HTMLElement>(null);
-  const tops = useRef(new Map<string, number>());
-  useLayoutEffect(() => {
-    const nav = ref.current;
-    if (!nav) return;
-    const origin = nav.getBoundingClientRect().top - nav.scrollTop;
-    const next = new Map<string, number>();
-    const animate = tops.current.size > 0 && !reducedMotion();
-    for (const el of nav.querySelectorAll<HTMLElement>("[data-flip]")) {
-      const y = el.getBoundingClientRect().top - origin;
-      const was = tops.current.get(el.dataset.flip!);
-      next.set(el.dataset.flip!, y);
-      if (!animate) continue;
-      if (was === undefined)
-        el.animate([{ opacity: 0, transform: "translateY(-6px)" }, { opacity: 1, transform: "none" }], { duration: 220, easing: cssEase("--ease-out") });
-      else if (Math.abs(was - y) > 1)
-        el.animate([{ transform: `translateY(${was - y}px)` }, { transform: "none" }], { duration: 280, easing: cssEase("--ease-in-out") });
-    }
-    tops.current = next;
-  }, [list]);
-  return ref;
-}
-
 export function Sidebar({ convs, currentId, srv, query, setQuery, searchRef, onNew, onOpen, onRename, onDelete, onLogout, onClose }: {
   convs: ConvView[]; currentId: string | null; srv: ServerState | null; query: string; setQuery: (q: string) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
@@ -136,7 +111,9 @@ export function Sidebar({ convs, currentId, srv, query, setQuery, searchRef, onN
   onLogout: () => void; onClose: () => void;
 }) {
   const shown = useMemo(() => convs.filter((c) => c.title.toLowerCase().includes(query.trim().toLowerCase())), [convs, query]);
-  const listRef = useFlip(shown);
+  // When the list changes (a conversation jumps to the top, a search), rows slide from where they were; the open row's highlight flies to the next one opened.
+  const listRef = useFlip<HTMLElement>([shown], true);
+  usePill(listRef, ".conv.active", [shown, currentId]);
   const groups: [string, ConvView[]][] = [];
   for (const c of shown) {
     const g = groupLabel(c.updatedAt);

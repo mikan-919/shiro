@@ -1,6 +1,7 @@
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import type { Board } from "../shared";
-import { CopyButton } from "./ui";
+import { CopyButton, Num } from "./ui";
+import { useFlip, usePill } from "./motion";
 import { RecordsView, SchemaView, useColony } from "./colony";
 import "./context.css";
 
@@ -38,8 +39,12 @@ function BoardView({ board }: { board?: Board }) {
     (filter === "all" || n.kind === filter) && `${n.agent} ${n.text}`.toLowerCase().includes(q),
   ).reverse();
   const shownTasks = tasks.filter((t) => `${t.id} ${t.text} ${t.owner ?? ""} ${t.result ?? ""}`.toLowerCase().includes(q));
+  // A filter, a search or a newly published note moves the cards to their new places; the chosen filter's fill flies to the next one chosen.
+  const flip = useFlip<HTMLDivElement>([board, filter, q]);
+  const filters = useRef<HTMLDivElement>(null);
+  usePill(filters, '[aria-pressed="true"]', [filter]);
   return (
-    <>
+    <div className="context-stack" ref={flip}>
       <p className="context-description">参加者が共有しているタスクとノートです。最新ターンのみ表示し、ノートは最大40件です。</p>
       {board?.statuses && Object.keys(board.statuses).length > 0 && (
         <div className="context-members" aria-label="参加者の状態">
@@ -48,41 +53,41 @@ function BoardView({ board }: { board?: Board }) {
       )}
       {tasks.length + gists.length + notes.length > 0 && <input type="search" className="context-search" aria-label="共有文脈を検索" placeholder="ノート・タスク・参加者を検索" value={query} onChange={(e) => setQuery(e.target.value)} />}
       <section aria-labelledby="context-tasks">
-        <div className="context-section-head"><h2 id="context-tasks">タスクキュー</h2><span>{tasks.filter((t) => t.done).length} / {tasks.length} 完了</span></div>
+        <div className="context-section-head" data-flip="head:tasks"><h2 id="context-tasks">タスクキュー</h2><span><Num value={tasks.filter((t) => t.done).length} /> / <Num value={tasks.length} /> 完了</span></div>
         {shownTasks.length ? <ul className="context-tasks">{shownTasks.map((task) => (
-          <li className="context-card" key={task.id}>
+          <li className="context-card" key={task.id} data-flip={`task:${task.id}`}>
             <div className="context-card-head"><span className={`context-tag ${task.done ? "done" : ""}`}>{task.done ? "完了" : task.owner ? "作業中" : "未着手"}</span><span>{task.owner ?? "担当なし"}</span></div>
             <p>{task.text}</p>
             {task.files && <small>{task.files.join(", ")}</small>}
             {task.result && <div className="context-result"><span>結果</span><p>{task.result}</p></div>}
             <small className="context-task-id">{task.id}</small>
           </li>
-        ))}</ul> : <p className="context-empty">{q ? "検索に一致するタスクはありません。" : "まだ共有タスクはありません。"}</p>}
+        ))}</ul> : <p className="context-empty" data-flip="empty:tasks">{q ? "検索に一致するタスクはありません。" : "まだ共有タスクはありません。"}</p>}
       </section>
       {gists.length > 0 && <section aria-labelledby="context-gists">
-        <div className="context-section-head"><h2 id="context-gists">型付き gist</h2><span>{gists.length} 件</span></div>
+        <div className="context-section-head" data-flip="head:gists"><h2 id="context-gists">型付き gist</h2><span><Num value={gists.length} /> 件</span></div>
         <ol className="context-notes">{gists.map((g, i) => ({ ...g, i })).filter((g) => `${g.agent} ${g.type} ${JSON.stringify(g.fields)}`.toLowerCase().includes(q)).reverse().map((g) => (
-          <li className="context-card kind-gist" key={g.i}>
+          <li className="context-card kind-gist" key={g.i} data-flip={`gist:${g.i}`}>
             <div className="context-card-head"><span className={peer(g.agent)}>{g.agent}</span><span className="context-tag">{g.type}</span></div>
             <dl className="context-fields">{Object.entries(g.fields).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
           </li>
         ))}</ol>
       </section>}
       <section aria-labelledby="context-notes">
-        <div className="context-section-head"><h2 id="context-notes">共有ノート</h2><span>{notes.length} 件</span></div>
-        {notes.length > 0 && <div className="context-filters" aria-label="ノートの種類">
-          {FILTERS.map((f) => <button type="button" key={f.id} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}<span>{f.id === "all" ? notes.length : notes.filter((n) => noteKind(n.text) === f.id).length}</span></button>)}
+        <div className="context-section-head" data-flip="head:notes"><h2 id="context-notes">共有ノート</h2><span><Num value={notes.length} /> 件</span></div>
+        {notes.length > 0 && <div className="context-filters" aria-label="ノートの種類" ref={filters} data-flip="filters">
+          {FILTERS.map((f) => <button type="button" key={f.id} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}<span><Num value={f.id === "all" ? notes.length : notes.filter((n) => noteKind(n.text) === f.id).length} /></span></button>)}
         </div>}
         {filter === "failure" && <p className="context-description">参加者が [failure] として公開したノートだけです。</p>}
         {filter === "type-gap" && <p className="context-description">[type-gap] は v0 の書き方です。いまの type-gap report は「記録」にあります。</p>}
         {shownNotes.length ? <ol className="context-notes">{shownNotes.map((note) => (
-          <li className={`context-card kind-${note.kind}`} key={`${note.i}:${note.agent}`}>
+          <li className={`context-card kind-${note.kind}`} key={`${note.i}:${note.agent}`} data-flip={`note:${note.i}`}>
             <div className="context-card-head"><span className={peer(note.agent)}>{note.agent}</span><span className="context-tag">{FILTERS.find((f) => f.id === note.kind)?.label}</span></div>
             <p>{note.text}</p>
           </li>
         ))}</ol> : <p className="context-empty">{notes.length ? "条件に一致するノートはありません。" : "まだ共有ノートはありません。"}</p>}
       </section>
-    </>
+    </div>
   );
 }
 
@@ -105,7 +110,7 @@ export function ContextPage({ board, running, title, id, colonyRev = 0 }: { boar
           <span className="seg-thumb" aria-hidden="true" />
           {TABS.map((t) => (
             <button type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? "on" : ""} key={t.id} onClick={() => setTab(t.id)}>
-              {t.label}{t.id === "schema" && undecided > 0 && <span className="context-badge" aria-label={`未決の提案 ${undecided} 件`}>{undecided}</span>}
+              {t.label}{t.id === "schema" && undecided > 0 && <span className="context-badge" aria-label={`未決の提案 ${undecided} 件`}><Num value={undecided} /></span>}
             </button>
           ))}
         </div>

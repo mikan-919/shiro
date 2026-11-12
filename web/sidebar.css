@@ -80,7 +80,7 @@
 .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 14px; color: var(--text); }
 .search input::placeholder { color: var(--faint); }
 
-.conv-list { flex: 1; overflow-y: auto; margin: 0 -10px; padding: 0 10px 12px; }
+.conv-list { flex: 1; overflow-y: auto; margin: 0 -10px; padding: 0 10px 12px; isolation: isolate; }
 .conv-list h2 { font-size: 12px; font-weight: 500; color: var(--faint); margin: 18px 10px 6px; letter-spacing: 0.04em; }
 .conv-list ul { list-style: none; margin: 0; padding: 0; }
 .side-empty { color: var(--faint); font-size: 13px; padding: 18px 10px; margin: 0; }
@@ -99,7 +99,10 @@
 }
 .conv > a:active { background: var(--surface); color: var(--text); scale: 0.98; }
 @media (hover: hover) { .conv > a:hover { background: var(--surface); color: var(--text); } }
-.conv.active > a { background: var(--surface); color: var(--text); font-weight: 500; }
+/* The open row's highlight is its own box, so it can fly from row to row (usePill). It sits under the whole list
+   (which isolates it), so on the way it passes behind the titles instead of over them. */
+.conv.active::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--surface); }
+.conv.active > a { color: var(--text); font-weight: 500; }
 .conv-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .conv-menu { position: absolute; right: 2px; top: 50%; translate: 0 -50%; opacity: 0; transition: opacity 0.12s; }
 .conv:hover .conv-menu, .conv.active .conv-menu, .conv-menu:focus-within { opacity: 1; }

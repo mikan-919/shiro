@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useLinger } from "./motion";
+import { useLerp, useLinger } from "./motion";
 
 import { ArrowDown, ArrowUp, Check, ChevronDown, CircleAlert, CircleDashed, Copy, Ellipsis, File, Folder, LogOut, Menu, MessageCircle, Monitor, Moon, Paperclip, PanelLeft, Pencil, Plus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Smile, Square, SquarePen, Sun, Terminal, Trash2, X, type LucideIcon } from "lucide-react";
 
@@ -42,6 +42,11 @@ export function CopyButton({ get, label = "コピー" }: { get: () => string; la
       }}
     />
   );
+}
+
+/** A count that ticks to its new value. With `from`, it also counts in from there when it first shows. */
+export function Num({ value, from }: { value: number; from?: number }) {
+  return <>{Math.round(useLerp(value, 90, from))}</>;
 }
 
 export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {

@@ -2,7 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { assistantText, MODELS, type AssistantMessage, type ReasoningPart, type ToolPart, type UserMessage } from "../shared";
 import type { Conversation } from "./sync";
 import { CopyButton, Icon, IconButton, usePopover } from "./ui";
-import { useFollowBottom, useLinger } from "./motion";
+import { useFlip, useFollowBottom, useLinger } from "./motion";
 import { Md } from "./markdown";
 import { StepChain } from "./steps";
 import "./thread.css";
@@ -169,10 +169,12 @@ export function Thread({ conv, known, onApprove, onReact, onEdit, onRegenerate, 
   const busy = conv.meta.running;
   const participants = conv.messages.filter((m): m is AssistantMessage => m.role === "assistant" && !!m.agent && m.status === "streaming");
   const lastAssistant = conv.messages.findLastIndex((m) => m.role === "assistant");
+  // A bubble arriving above the participants pushes them down rather than making them jump; when one finishes, the others close up.
+  const column = useFlip<HTMLDivElement>([conv.messages.length, participants.map((m) => m.id).join()]);
 
   return (
     <div className="thread" {...follow.scroller}>
-      <div className="column" ref={follow.content}>
+      <div className="column" ref={(el) => void (follow.content.current = column.current = el)}>
         {conv.messages.map((m, i) =>
           m.role === "user" ? (
             <UserRow key={m.id} m={m} fresh={!known.has(m.id)} busy={busy} onEdit={(t) => onEdit(m, t)} onImage={onImage} />
@@ -183,7 +185,7 @@ export function Thread({ conv, known, onApprove, onReact, onEdit, onRegenerate, 
         {busy && participants.length > 0 && (
           <div className="team-presence" role="status" aria-label="参加者の状態">
             {participants.map((m) => (
-              <span key={m.id} className={`sender ${m.agent === "shiro-2" ? "peer-two" : m.agent === "shiro-3" ? "peer-three" : m.agent === "shiro-4" ? "peer-four" : ""}`}>
+              <span key={m.id} data-flip={m.id} className={`sender ${m.agent === "shiro-2" ? "peer-two" : m.agent === "shiro-3" ? "peer-three" : m.agent === "shiro-4" ? "peer-four" : ""}`}>
                 {m.agent}
                 {m.parts.some((p) => p.type === "tool" && p.status === "awaiting") ? (
                   <span>承認待ち</span>
