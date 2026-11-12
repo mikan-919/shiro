@@ -104,13 +104,13 @@ export function colony(): Colony {
   return {
     version: store.SUBSTRATE_VERSION, threshold: THRESHOLD, pending: pending().length,
     unobserved: unobserved().length, busy: { observing: observing(), evolving: running },
-    observer: { ran: observed.length, failed: observed.filter(Boolean).length, ...(observed.at(-1) && { error: observed.at(-1) }) },
+    ...(observed.at(-1) && { observeError: observed.at(-1) }),
     turns: summarize(log.filter((r) => r.conv !== COLONY)).map((t) => ({ ...t, peers: t.peers.size })).reverse(),
-    labelled: log.filter(label).map((r) => ({ seq: r.seq, at: r.at, agent: r.agent, text: (r.body as { text: string }).text })).reverse(),
+    labelled: log.filter(label).map((r) => ({ seq: r.seq, at: r.at, conv: r.conv, agent: r.agent, text: (r.body as { text: string }).text })).reverse(),
     types: store.types().map((r) => ({ seq: r.seq, at: r.at, ...r.body })),
     proposals: open().map((r) => ({ seq: r.seq, at: r.at, ...r.body })).reverse(),
     reports: log.filter((r) => r.kind === "type-gap").map((r) => ({ seq: r.seq, at: r.at, conv: r.conv, ...(r.body as Omit<Colony["reports"][number], "seq" | "at" | "conv">) })).reverse(),
-    settled: log.filter((r) => r.kind === "settled").map((r) => ({ seq: r.seq, at: r.at, ...(r.body as { kind: string; text: string; cwd: string | null }), retracted: retracted.has(r.seq) })).reverse(),
+    settled: log.filter((r) => r.kind === "settled").map((r) => ({ seq: r.seq, at: r.at, conv: r.conv, ...(r.body as { kind: string; text: string; cwd: string | null }), retracted: retracted.has(r.seq) })).reverse(),
     runs: log.filter((r) => r.kind === "evolve").map((r) => {
       const b = r.body as { reports: number[]; proposals?: number[]; error?: string };
       return { seq: r.seq, at: r.at, reports: b.reports.length, proposals: b.proposals?.length ?? 0, ...(b.error && { error: b.error }) };

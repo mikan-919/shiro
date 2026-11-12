@@ -720,14 +720,15 @@ test("past turns are observed on request: one call per unobserved turn, stopping
   expect(colony().busy.observing).toEqual({ done: 0, total: todo });
   await until(() => !observing());
   expect(calls).toBe(1); // The first failure stops the run.
-  expect(colony().observer.error).toBe("no auth");
+  expect(colony().observeError).toBe("no auth");
   fail = false;
   agent.observePast();
   await until(() => !observing());
   expect(calls).toBe(1 + todo);
   expect(unobserved()).toEqual([]);
   expect(colony()).toMatchObject({ unobserved: 0, busy: { observing: null } });
-  expect(colony().observer.error).toBeUndefined();
+  expect(colony().observeError).toBeUndefined();
+  expect(colony().turns.find((t) => t.turn === "past-1")).toMatchObject({ conv: "past", observed: 1 });
   expect(pushes.some((p) => p.type === "colony")).toBe(true);
   agent.remove(id);
 });

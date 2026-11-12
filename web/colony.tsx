@@ -12,7 +12,7 @@ function Fields({ fields }: { fields: Record<string, string> }) {
 export type Job = "observe" | "stop" | "evolve";
 
 /** Loads the colony on mount, when a turn starts or ends, and whenever the server says it changed (`rev`): the observer and the evolver write after the turn. */
-export function ColonySection({ running, rev }: { running: boolean; rev: number }) {
+export function ColonySection({ running, rev, conv }: { running: boolean; rev: number; conv?: string }) {
   const [data, setData] = useState<Colony>();
   const [error, setError] = useState("");
   useEffect(() => {
@@ -24,17 +24,24 @@ export function ColonySection({ running, rev }: { running: boolean; rev: number 
     api<Colony>(path, body, method).then((d) => { setData(d); setError(""); }, (e: Error) => setError(e.message));
   const decide = (action: "adopt" | "reject", target: number) => call("/api/colony/decide", { action, target });
   const run = (job: Job) => (job === "stop" ? call("/api/colony/observe", undefined, "DELETE") : call(`/api/colony/${job}`));
-  return <ColonyView data={data} error={error} decide={decide} run={run} />;
+  return <ColonyView data={data} error={error} decide={decide} run={run} conv={conv} />;
 }
 
-export function ColonyView({ data, error, decide, run }: { data?: Colony; error?: string; decide: (action: "adopt" | "reject", target: number) => void; run: (job: Job) => void }) {
+/** `conv` is the open conversation: the records below the types can be narrowed to it. */
+export function ColonyView({ data, error, decide, run, conv }: { data?: Colony; error?: string; decide: (action: "adopt" | "reject", target: number) => void; run: (job: Job) => void; conv?: string }) {
   const [confirm, setConfirm] = useState<string>();
+  const [only, setOnly] = useState(false);
   if (!data) return <section aria-labelledby="context-colony"><h2 id="context-colony" className="context-colony-title">スキーマの進化</h2><p className="context-empty">{error || "読み込み中です。"}</p></section>;
   const reports = new Map(data.reports.map((r) => [r.seq, r]));
   const last = data.runs[0];
-  const live = data.settled.filter((s) => !s.retracted);
+  const mine = <T extends { conv: string }>(rows: T[]) => (only ? rows.filter((r) => r.conv === conv) : rows);
+  const gaps = mine(data.reports);
+  const settled = mine(data.settled);
+  const turns = mine(data.turns);
+  const labelled = mine(data.labelled);
+  const live = settled.filter((s) => !s.retracted);
   const { observing, evolving } = data.busy;
-  const sum = (f: (t: Colony["turns"][number]) => number) => data.turns.reduce((n, t) => n + f(t), 0);
+  const sum = (f: (t: Colony["turns"][number]) => number) => turns.reduce((n, t) => n + f(t), 0);
   return (
     <section aria-labelledby="context-colony" className="context-colony">
       <div className="context-section-head"><h2 id="context-colony" className="context-colony-title">スキーマの進化</h2><span>基質スキーマ v{data.version}・全会話</span></div>
@@ -80,7 +87,13 @@ export function ColonyView({ data, error, decide, run }: { data?: Colony; error?
         </li>
       ))}</ol> : <p className="context-empty">v3 以降に採用された型はまだありません。v0〜v2 の型（ノート、タスク、type-gap report、定着事項）は常に使えます。</p>}
 
-      <h3 className="context-subhead">type-gap report <span>{data.reports.length} 件・新しい順・自己申告 {data.reports.filter((r) => r.source === "self").length}・観察者 {data.reports.filter((r) => r.source === "observer").length}</span></h3>
+      {conv && <div className="context-filters context-scope" aria-label="記録の範囲">
+        <button type="button" aria-pressed={!only} onClick={() => setOnly(false)}>全会話</button>
+        <button type="button" aria-pressed={only} onClick={() => setOnly(true)}>この会話</button>
+        <small>ここから下の report、定着事項、ターンの記録、ラベル付きノートを絞り込みます。</small>
+      </div>}
+
+      <h3 className="context-subhead">type-gap report <span>{gaps.length} 件・新しい順・自己申告 {gaps.filter((r) => r.source === "self").length}・観察者 {gaps.filter((r) => r.source === "observer").length}</span></h3>
       <div className="context-decide">
         {observing ? <>
           <span role="status">過去のターンを観察中です（{observing.done} / {observing.total}）。</span>
@@ -90,8 +103,8 @@ export function ColonyView({ data, error, decide, run }: { data?: Colony; error?
           <span>未観察 {data.unobserved} ターン。1ターンにつきモデルを1回呼び、失敗した時点で止まります。</span>
         </>}
       </div>
-      {data.observer.error && <p className="context-empty" role="alert">直近の観察は失敗しました: {data.observer.error}</p>}
-      {data.reports.length ? <details className="context-fold"><summary>一覧を開く</summary><ol className="context-notes">{data.reports.map((r) => (
+      {data.observeError && <p className="context-empty" role="alert">直近の観察は失敗しました: {data.observeError}</p>}
+      {gaps.length ? <details className="context-fold"><summary>一覧を開く</summary><ol className="context-notes">{gaps.map((r) => (
         <li className="context-card kind-type-gap" key={r.seq}>
           <div className="context-card-head"><span className="context-tag">#{r.seq} {SOURCE[r.source] ?? r.source}</span><span>{when(r.at)}・{r.conv.slice(0, 8)}</span></div>
           <dl className="context-fields">
@@ -103,24 +116,24 @@ export function ColonyView({ data, error, decide, run }: { data?: Colony; error?
         </li>
       ))}</ol></details> : <p className="context-empty">まだ type-gap report はありません。</p>}
 
-      <h3 className="context-subhead">長期共有文脈 <span>有効 {live.length} 件・打ち消し済み {data.settled.length - live.length} 件</span></h3>
-      {data.settled.length ? <ol className="context-notes">{data.settled.map((s) => (
+      <h3 className="context-subhead">長期共有文脈 <span>有効 {live.length} 件・打ち消し済み {settled.length - live.length} 件</span></h3>
+      {settled.length ? <ol className="context-notes">{settled.map((s) => (
         <li className={`context-card ${s.retracted ? "retracted" : ""}`} key={s.seq}>
           <div className="context-card-head"><span className="context-tag">#{s.seq} {s.kind === "policy" ? "方針" : "環境"}{s.retracted ? "・打ち消し済み" : ""}</span><span>{s.cwd ?? "全ディレクトリ"}</span></div>
           <p>{s.text}</p>
         </li>
       ))}</ol> : <p className="context-empty">まだ定着事項はありません。</p>}
 
-      <h3 className="context-subhead">ターンの記録 <span>{data.turns.length} ターン・参加者の起動 {sum((t) => t.peers)} 回・複数参加 {data.turns.filter((t) => t.peers > 1).length} ターン・failure {sum((t) => t.failure)} 件・観察 {data.observer.ran} 回（失敗 {data.observer.failed}）</span></h3>
-      {data.turns.length ? <details className="context-fold"><summary>一覧を開く</summary><div className="context-table"><table>
-        <thead><tr><th>時刻</th><th>会話</th><th>参加者</th><th>タスク追加</th><th>ツール</th><th>type-gap</th><th>failure</th></tr></thead>
-        <tbody>{data.turns.map((t) => <tr key={t.turn}><td>{when(t.at)}</td><td>{t.conv.slice(0, 8)}</td><td>{t.peers}</td><td>{t.add}</td><td>{t.tool}</td><td>{t.gap}</td><td>{t.failure}</td></tr>)}</tbody>
+      <h3 className="context-subhead">ターンの記録 <span>{turns.length} ターン・参加者の起動 {sum((t) => t.peers)} 回・複数参加 {turns.filter((t) => t.peers > 1).length} ターン・failure {sum((t) => t.failure)} 件・観察 {sum((t) => t.observed + t.observeFailed)} 回（失敗 {sum((t) => t.observeFailed)}）</span></h3>
+      {turns.length ? <details className="context-fold"><summary>一覧を開く</summary><div className="context-table"><table>
+        <thead><tr><th>時刻</th><th>会話</th><th>参加者</th><th>タスク追加</th><th>ツール</th><th>type-gap</th><th>failure</th><th>観察</th></tr></thead>
+        <tbody>{turns.map((t) => <tr key={t.turn}><td>{when(t.at)}</td><td>{t.conv.slice(0, 8)}</td><td>{t.peers}</td><td>{t.add}</td><td>{t.tool}</td><td>{t.gap}</td><td>{t.failure}</td><td>{t.observed ? "済" : t.observeFailed ? "失敗" : "—"}</td></tr>)}</tbody>
       </table></div></details> : <p className="context-empty">まだターンの記録はありません。</p>}
 
-      <h3 className="context-subhead">ラベル付きノート <span>{data.labelled.length} 件・[failure] と v0 の [type-gap]・全会話</span></h3>
-      {data.labelled.length ? <details className="context-fold"><summary>一覧を開く</summary><ol className="context-notes">{data.labelled.map((n) => (
+      <h3 className="context-subhead">ラベル付きノート <span>{labelled.length} 件・[failure] と v0 の [type-gap]</span></h3>
+      {labelled.length ? <details className="context-fold"><summary>一覧を開く</summary><ol className="context-notes">{labelled.map((n) => (
         <li className="context-card" key={n.seq}>
-          <div className="context-card-head"><span className="context-tag">#{n.seq} {n.agent}</span><span>{when(n.at)}</span></div>
+          <div className="context-card-head"><span className="context-tag">#{n.seq} {n.agent}</span><span>{when(n.at)}・{n.conv.slice(0, 8)}</span></div>
           <p>{n.text}</p>
         </li>
       ))}</ol></details> : <p className="context-empty">ラベル付きのノートはありません。</p>}

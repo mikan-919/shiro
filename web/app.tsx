@@ -182,7 +182,7 @@ function App() {
         {!live.online && <p className="offline" role="status">サーバーとの接続が切れています。再接続しています</p>}
 
         {live.contextPage && conv ? (
-          <ContextPage board={conv.board} running={conv.meta.running} title={conv.meta.title} colonyRev={live.colonyRev} />
+          <ContextPage board={conv.board} running={conv.meta.running} title={conv.meta.title} id={conv.meta.id} colonyRev={live.colonyRev} />
         ) : showThread ? (
           <>
             <Thread

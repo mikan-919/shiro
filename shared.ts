@@ -190,15 +190,15 @@ export type Colony = {
   /** Turns that hold gists the observer has not read, and what is running in the background now. */
   unobserved: number;
   busy: { observing: { done: number; total: number } | null; evolving: boolean };
-  /** `error` is set while the latest observation is a failed one. */
-  observer: { ran: number; failed: number; error?: string };
-  /** One row per turn, newest first. `gap` counts type-gap reports and v0 notes labelled [type-gap]. */
-  turns: { turn: string; conv: string; at: number; peers: number; add: number; tool: number; gap: number; failure: number }[];
+  /** Set while the latest observation is a failed one. */
+  observeError?: string;
+  /** One row per turn, newest first. `gap` counts type-gap reports and v0 notes labelled [type-gap]; `observed` and `observeFailed` count the observer's runs on the turn. */
+  turns: { turn: string; conv: string; at: number; peers: number; add: number; tool: number; gap: number; failure: number; observed: number; observeFailed: number }[];
   /** Notes labelled [failure] or [type-gap], newest first. */
-  labelled: { seq: number; at: number; agent: string; text: string }[];
+  labelled: { seq: number; at: number; conv: string; agent: string; text: string }[];
   types: { seq: number; at: number; name: string; purpose: string; fields: Record<string, string>; obligation: string }[];
   proposals: { seq: number; at: number; name: string; purpose: string; fields: Record<string, string>; obligation: string; covers: number[]; cost: { fields: number; bytes: number } }[];
   reports: { seq: number; at: number; conv: string; source: string; wanted: string; distortion: string; cost: string; evidence: string[] }[];
-  settled: { seq: number; at: number; kind: string; text: string; cwd: string | null; retracted: boolean }[];
+  settled: { seq: number; at: number; conv: string; kind: string; text: string; cwd: string | null; retracted: boolean }[];
   runs: { seq: number; at: number; reports: number; proposals: number; error?: string }[];
 };

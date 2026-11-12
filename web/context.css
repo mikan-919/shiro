@@ -57,6 +57,8 @@
 .context-decide button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text); }
 .context-decide button.primary { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; }
 .context-decide button:disabled { opacity: .45; }
+.context-scope { align-items: center; margin: 10px 0 0; }
+.context-scope small { color: var(--muted); font-size: 12px; }
 .context-table { overflow-x: auto; margin-top: 10px; }
 .context-table table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .context-table :is(th, td) { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); }
